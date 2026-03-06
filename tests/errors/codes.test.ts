@@ -13,6 +13,7 @@ describe("ERROR_CODES", () => {
 
   it("contains the mandatory workspace and codex failure families", () => {
     expect(ERROR_CODES.workspaceRootEscape).toBe("workspace_root_escape");
+    expect(ERROR_CODES.invalidWorkspaceCwd).toBe("invalid_workspace_cwd");
     expect(ERROR_CODES.hookTimedOut).toBe("hook_timed_out");
     expect(ERROR_CODES.codexReadTimeout).toBe("codex_read_timeout");
     expect(ERROR_CODES.codexTurnTimeout).toBe("codex_turn_timeout");
