@@ -29,7 +29,7 @@ describe("linear-normalize", () => {
         nodes: [
           {
             type: "blocks",
-            sourceIssue: {
+            issue: {
               id: "issue-0",
               identifier: "ENG-100",
               state: {
@@ -39,7 +39,7 @@ describe("linear-normalize", () => {
           },
           {
             type: "relatesTo",
-            sourceIssue: {
+            issue: {
               id: "issue-x",
               identifier: "ENG-X",
               state: {
@@ -71,6 +71,39 @@ describe("linear-normalize", () => {
       createdAt: "2026-03-01T00:00:00.000Z",
       updatedAt: "2026-03-02T12:34:56.789Z",
     });
+  });
+
+  it("accepts legacy blocker payloads that still use sourceIssue", () => {
+    const issue = normalizeLinearIssue({
+      id: "issue-1",
+      identifier: "ENG-123",
+      title: "Implement adapter",
+      state: {
+        name: "Todo",
+      },
+      inverseRelations: {
+        nodes: [
+          {
+            type: "blocks",
+            sourceIssue: {
+              id: "issue-0",
+              identifier: "ENG-100",
+              state: {
+                name: "In Progress",
+              },
+            },
+          },
+        ],
+      },
+    });
+
+    expect(issue.blockedBy).toEqual([
+      {
+        id: "issue-0",
+        identifier: "ENG-100",
+        state: "In Progress",
+      },
+    ]);
   });
 
   it("returns null for non-integer priority and invalid timestamps", () => {

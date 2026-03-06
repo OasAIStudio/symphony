@@ -25,6 +25,13 @@ interface LinearIssueNode {
   }> | null;
   inverseRelations?: LinearConnection<{
     type?: unknown;
+    issue?: {
+      id?: unknown;
+      identifier?: unknown;
+      state?: {
+        name?: unknown;
+      } | null;
+    } | null;
     sourceIssue?: {
       id?: unknown;
       identifier?: unknown;
@@ -145,7 +152,7 @@ function normalizeBlockedBy(
       return [];
     }
 
-    return [normalizeBlocker(relation.sourceIssue)];
+    return [normalizeBlocker(relation.issue ?? relation.sourceIssue)];
   });
 }
 

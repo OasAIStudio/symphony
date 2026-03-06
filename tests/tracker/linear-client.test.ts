@@ -73,6 +73,7 @@ describe("LinearTrackerClient", () => {
       projectSlug: "ENG",
       activeStates: ["Todo", "In Progress"],
       first: 50,
+      relationFirst: 50,
       after: null,
     });
 
@@ -81,6 +82,7 @@ describe("LinearTrackerClient", () => {
       projectSlug: "ENG",
       activeStates: ["Todo", "In Progress"],
       first: 50,
+      relationFirst: 50,
       after: "cursor-1",
     });
   });
@@ -288,6 +290,7 @@ function issueNode(input: {
     priority: 2,
     branchName: null,
     url: null,
+    assignee: null,
     createdAt: input.createdAt,
     updatedAt: input.createdAt,
     state: {

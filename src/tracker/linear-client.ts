@@ -83,6 +83,7 @@ export class LinearTrackerClient implements IssueTracker {
       projectSlug: this.requireProjectSlug(),
       activeStates: this.activeStates,
       first: this.pageSize,
+      relationFirst: this.pageSize,
     });
   }
 
@@ -95,6 +96,7 @@ export class LinearTrackerClient implements IssueTracker {
       projectSlug: this.requireProjectSlug(),
       stateNames,
       first: this.pageSize,
+      relationFirst: this.pageSize,
     });
   }
 

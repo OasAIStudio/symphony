@@ -6,6 +6,9 @@ const ISSUE_FIELDS = `
   priority
   branchName
   url
+  assignee {
+    id
+  }
   createdAt
   updatedAt
   state {
@@ -16,10 +19,10 @@ const ISSUE_FIELDS = `
       name
     }
   }
-  inverseRelations {
+  inverseRelations(first: $relationFirst) {
     nodes {
       type
-      sourceIssue {
+      issue {
         id
         identifier
         state {
@@ -35,6 +38,7 @@ export const LINEAR_CANDIDATE_ISSUES_QUERY = `
     $projectSlug: String!
     $activeStates: [String!]!
     $first: Int!
+    $relationFirst: Int!
     $after: String
   ) {
     issues(
@@ -62,6 +66,7 @@ export const LINEAR_ISSUES_BY_STATES_QUERY = `
     $projectSlug: String!
     $stateNames: [String!]!
     $first: Int!
+    $relationFirst: Int!
     $after: String
   ) {
     issues(
