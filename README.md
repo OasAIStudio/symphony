@@ -8,6 +8,8 @@
 `symphony-ts` is a TypeScript implementation of the original
 [openai/symphony](https://github.com/openai/symphony) project.
 
+It starts with Linear and is designed to support additional tracker platforms over time.
+
 It is an orchestration service for agent-driven software delivery: it reads work from your tracker,
 creates a dedicated workspace for each issue, runs a coding agent inside that boundary, and gives
 operators a clean surface for runtime visibility, retries, and control.
@@ -19,9 +21,18 @@ moving from managing coding agents to managing work that needs to get done.
 > [!WARNING]
 > Symphony is intended for trusted environments.
 
-<!-- Demo preview goes here -->
+![Symphony demo showing Linear issue tracking alongside the Symphony observability dashboard](.github/media/demo.png)
 
 ## Running Symphony
+
+## RoadMap
+
+| Item | Status |
+| --- | --- |
+| Implement Symphony and Linear integration | ✅ Complete |
+| Support more platforms | 🟡 Planned |
+| Support a local board GUI | 🟡 Planned |
+| Support more coding agents such as Claude Code scheduling | 🟡 Planned |
 
 ### Requirements
 
@@ -102,5 +113,5 @@ Implement the task, validate the result, and stop at the required handoff state.
 ## Contributing
 
 If you are extending this TypeScript implementation, keep changes aligned with the upstream product
-model in [`SPEC.upstream.md`](/Users/wangruobing/Personal/symwork/symphony/SPEC.upstream.md) and
-follow the repository workflow documented in [`AGENTS.md`](/Users/wangruobing/Personal/symwork/symphony/AGENTS.md).
+model in [`SPEC.upstream.md`](SPEC.upstream.md) and follow the repository workflow documented in
+[`AGENTS.md`](AGENTS.md).
