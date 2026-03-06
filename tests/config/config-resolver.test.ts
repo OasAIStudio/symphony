@@ -1,0 +1,208 @@
+import { join } from "node:path";
+
+import { describe, expect, it } from "vitest";
+
+import {
+  resolveWorkflowConfig,
+  validateDispatchConfig,
+} from "../../src/config/config-resolver.js";
+import {
+  DEFAULT_CODEX_COMMAND,
+  DEFAULT_HOOK_TIMEOUT_MS,
+  DEFAULT_MAX_CONCURRENT_AGENTS,
+  DEFAULT_MAX_RETRY_BACKOFF_MS,
+  DEFAULT_MAX_TURNS,
+  DEFAULT_POLL_INTERVAL_MS,
+  DEFAULT_READ_TIMEOUT_MS,
+  DEFAULT_STALL_TIMEOUT_MS,
+  DEFAULT_TURN_TIMEOUT_MS,
+  DEFAULT_WORKSPACE_ROOT,
+} from "../../src/config/defaults.js";
+import { ERROR_CODES } from "../../src/errors/codes.js";
+
+describe("config-resolver", () => {
+  it("applies spec defaults when workflow config is empty", () => {
+    const resolved = resolveWorkflowConfig({
+      workflowPath: "/repo/WORKFLOW.md",
+      config: {},
+      promptTemplate: "Prompt",
+    });
+
+    expect(resolved.tracker.kind).toBe("linear");
+    expect(resolved.tracker.endpoint).toBe("https://api.linear.app/graphql");
+    expect(resolved.tracker.activeStates).toEqual(["Todo", "In Progress"]);
+    expect(resolved.tracker.terminalStates).toEqual([
+      "Closed",
+      "Cancelled",
+      "Canceled",
+      "Duplicate",
+      "Done",
+    ]);
+    expect(resolved.polling.intervalMs).toBe(DEFAULT_POLL_INTERVAL_MS);
+    expect(resolved.workspace.root).toBe(DEFAULT_WORKSPACE_ROOT);
+    expect(resolved.hooks.timeoutMs).toBe(DEFAULT_HOOK_TIMEOUT_MS);
+    expect(resolved.agent.maxConcurrentAgents).toBe(
+      DEFAULT_MAX_CONCURRENT_AGENTS,
+    );
+    expect(resolved.agent.maxTurns).toBe(DEFAULT_MAX_TURNS);
+    expect(resolved.agent.maxRetryBackoffMs).toBe(DEFAULT_MAX_RETRY_BACKOFF_MS);
+    expect(resolved.codex.command).toBe(DEFAULT_CODEX_COMMAND);
+    expect(resolved.codex.turnTimeoutMs).toBe(DEFAULT_TURN_TIMEOUT_MS);
+    expect(resolved.codex.readTimeoutMs).toBe(DEFAULT_READ_TIMEOUT_MS);
+    expect(resolved.codex.stallTimeoutMs).toBe(DEFAULT_STALL_TIMEOUT_MS);
+  });
+
+  it("coerces env-backed fields, path-like roots, and state limits", () => {
+    const resolved = resolveWorkflowConfig(
+      {
+        workflowPath: "/repo/WORKFLOW.md",
+        promptTemplate: "Prompt",
+        config: {
+          tracker: {
+            api_key: "$LINEAR_TOKEN",
+            project_slug: "ENG",
+            active_states: "Todo, In Progress, Ready for QA",
+          },
+          polling: {
+            interval_ms: "15000",
+          },
+          workspace: {
+            root: "./tmp/workspaces",
+          },
+          hooks: {
+            timeout_ms: "0",
+            before_run: "pnpm test",
+          },
+          agent: {
+            max_concurrent_agents: "4",
+            max_turns: "8",
+            max_retry_backoff_ms: "120000",
+            max_concurrent_agents_by_state: {
+              " In Progress ": "2",
+              Done: 0,
+            },
+          },
+          codex: {
+            command: "codex app-server --stdio",
+            turn_timeout_ms: "90000",
+            read_timeout_ms: "2500",
+            stall_timeout_ms: "-1",
+          },
+          server: {
+            port: "8080",
+          },
+        },
+      },
+      {
+        LINEAR_TOKEN: "secret-token",
+      },
+    );
+
+    expect(resolved.tracker.apiKey).toBe("secret-token");
+    expect(resolved.tracker.projectSlug).toBe("ENG");
+    expect(resolved.tracker.activeStates).toEqual([
+      "Todo",
+      "In Progress",
+      "Ready for QA",
+    ]);
+    expect(resolved.polling.intervalMs).toBe(15_000);
+    expect(resolved.workspace.root).toBe(join("/repo", "tmp/workspaces"));
+    expect(resolved.hooks.beforeRun).toBe("pnpm test");
+    expect(resolved.hooks.timeoutMs).toBe(DEFAULT_HOOK_TIMEOUT_MS);
+    expect(resolved.agent.maxConcurrentAgents).toBe(4);
+    expect(resolved.agent.maxTurns).toBe(8);
+    expect(resolved.agent.maxRetryBackoffMs).toBe(120_000);
+    expect(resolved.agent.maxConcurrentAgentsByState).toEqual({
+      "in progress": 2,
+    });
+    expect(resolved.codex.command).toBe("codex app-server --stdio");
+    expect(resolved.codex.turnTimeoutMs).toBe(90_000);
+    expect(resolved.codex.readTimeoutMs).toBe(2_500);
+    expect(resolved.codex.stallTimeoutMs).toBe(-1);
+    expect(resolved.server.port).toBe(8080);
+  });
+
+  it("uses the canonical LINEAR_API_KEY env var fallback", () => {
+    const resolved = resolveWorkflowConfig(
+      {
+        workflowPath: "/repo/WORKFLOW.md",
+        promptTemplate: "Prompt",
+        config: {
+          tracker: {
+            project_slug: "ENG",
+          },
+        },
+      },
+      {
+        LINEAR_API_KEY: "canonical-secret",
+      },
+    );
+
+    expect(resolved.tracker.apiKey).toBe("canonical-secret");
+  });
+
+  it("blocks dispatch when required tracker settings are missing", () => {
+    const resolved = resolveWorkflowConfig({
+      workflowPath: "/repo/WORKFLOW.md",
+      promptTemplate: "Prompt",
+      config: {},
+    });
+
+    const validation = validateDispatchConfig(resolved);
+    expect(validation).toEqual({
+      ok: false,
+      error: {
+        code: ERROR_CODES.trackerCredentialsMissing,
+        message: "tracker.api_key must be configured before dispatch.",
+      },
+    });
+  });
+
+  it("rejects unsupported tracker kinds during dispatch validation", () => {
+    const validation = validateDispatchConfig(
+      resolveWorkflowConfig(
+        {
+          workflowPath: "/repo/WORKFLOW.md",
+          promptTemplate: "Prompt",
+          config: {
+            tracker: {
+              kind: "jira",
+              api_key: "token",
+              project_slug: "ENG",
+            },
+          },
+        },
+        {},
+      ),
+    );
+
+    expect(validation).toEqual({
+      ok: false,
+      error: {
+        code: ERROR_CODES.unsupportedTrackerKind,
+        message: "tracker.kind 'jira' is not supported.",
+      },
+    });
+  });
+
+  it("accepts dispatch when tracker and codex prerequisites are present", () => {
+    const validation = validateDispatchConfig(
+      resolveWorkflowConfig(
+        {
+          workflowPath: "/repo/WORKFLOW.md",
+          promptTemplate: "Prompt",
+          config: {
+            tracker: {
+              kind: "linear",
+              api_key: "token",
+              project_slug: "ENG",
+            },
+          },
+        },
+        {},
+      ),
+    );
+
+    expect(validation).toEqual({ ok: true });
+  });
+});

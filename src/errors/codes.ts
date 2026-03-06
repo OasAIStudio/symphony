@@ -1,4 +1,10 @@
 export const ERROR_CODES = {
+  missingWorkflowFile: "missing_workflow_file",
+  workflowParseError: "workflow_parse_error",
+  workflowFrontMatterNotAMap: "workflow_front_matter_not_a_map",
+  templateParseError: "template_parse_error",
+  templateRenderError: "template_render_error",
+  unsupportedTrackerKind: "unsupported_tracker_kind",
   workflowNotFound: "workflow_not_found",
   workflowReadFailed: "workflow_read_failed",
   workflowYamlInvalid: "workflow_yaml_invalid",

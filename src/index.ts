@@ -1,4 +1,7 @@
 export * from "./config/defaults.js";
+export * from "./config/config-resolver.js";
+export * from "./config/types.js";
+export * from "./config/workflow-loader.js";
 export * from "./domain/model.js";
 export * from "./errors/codes.js";
 export * from "./logging/fields.js";

@@ -4,6 +4,11 @@ import { ERROR_CODES } from "../../src/errors/codes.js";
 
 describe("ERROR_CODES", () => {
   it("contains the typed workflow parsing failures required by the spec", () => {
+    expect(ERROR_CODES.missingWorkflowFile).toBe("missing_workflow_file");
+    expect(ERROR_CODES.workflowParseError).toBe("workflow_parse_error");
+    expect(ERROR_CODES.workflowFrontMatterNotAMap).toBe(
+      "workflow_front_matter_not_a_map",
+    );
     expect(ERROR_CODES.workflowNotFound).toBe("workflow_not_found");
     expect(ERROR_CODES.workflowYamlInvalid).toBe("workflow_yaml_invalid");
     expect(ERROR_CODES.workflowFrontmatterNotMap).toBe(
