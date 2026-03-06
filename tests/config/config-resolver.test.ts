@@ -122,6 +122,44 @@ describe("config-resolver", () => {
     expect(resolved.server.port).toBe(8080);
   });
 
+  it("accepts server.port zero for ephemeral listener binding", () => {
+    const resolved = resolveWorkflowConfig({
+      workflowPath: "/repo/WORKFLOW.md",
+      promptTemplate: "Prompt",
+      config: {
+        server: {
+          port: 0,
+        },
+      },
+    });
+
+    expect(resolved.server.port).toBe(0);
+  });
+
+  it("ignores invalid negative or non-integer server.port values", () => {
+    const negative = resolveWorkflowConfig({
+      workflowPath: "/repo/WORKFLOW.md",
+      promptTemplate: "Prompt",
+      config: {
+        server: {
+          port: -1,
+        },
+      },
+    });
+    const invalidString = resolveWorkflowConfig({
+      workflowPath: "/repo/WORKFLOW.md",
+      promptTemplate: "Prompt",
+      config: {
+        server: {
+          port: "eight-thousand",
+        },
+      },
+    });
+
+    expect(negative.server.port).toBeNull();
+    expect(invalidString.server.port).toBeNull();
+  });
+
   it("uses the canonical LINEAR_API_KEY env var fallback", () => {
     const resolved = resolveWorkflowConfig(
       {

@@ -25,6 +25,9 @@ describe("dashboard server", () => {
     });
     servers.push(server);
 
+    expect(server.hostname).toBe("127.0.0.1");
+    expect(server.port).toBeGreaterThan(0);
+
     const dashboard = await sendRequest(server.port, {
       method: "GET",
       path: "/",
@@ -47,6 +50,28 @@ describe("dashboard server", () => {
       },
       running: [{ issue_identifier: "ABC-123" }],
     });
+  });
+
+  it("stops serving requests after the listener is closed", async () => {
+    const server = await startDashboardServer({
+      port: 0,
+      host: createHost(),
+    });
+
+    const first = await sendRequest(server.port, {
+      method: "GET",
+      path: "/api/v1/state",
+    });
+    expect(first.statusCode).toBe(200);
+
+    await server.close();
+
+    await expect(
+      sendRequest(server.port, {
+        method: "GET",
+        path: "/api/v1/state",
+      }),
+    ).rejects.toThrow();
   });
 
   it("returns issue details and a 404 json error for unknown issues", async () => {
@@ -131,6 +156,20 @@ describe("dashboard server", () => {
         message: "Method not allowed.",
       },
     });
+
+    const invalidRefreshMethod = await sendRequest(server.port, {
+      method: "GET",
+      path: "/api/v1/refresh",
+    });
+    expect(invalidRefreshMethod.statusCode).toBe(405);
+    expect(invalidRefreshMethod.headers.allow).toBe("POST");
+
+    const invalidRootMethod = await sendRequest(server.port, {
+      method: "POST",
+      path: "/",
+    });
+    expect(invalidRootMethod.statusCode).toBe(405);
+    expect(invalidRootMethod.headers.allow).toBe("GET");
   });
 
   it("returns snapshot_unavailable when the host snapshot fails", async () => {
@@ -173,6 +212,22 @@ describe("dashboard server", () => {
         message: "snapshot exploded",
       },
     });
+  });
+
+  it("returns a plain 404 for undefined routes", async () => {
+    const server = await startDashboardServer({
+      port: 0,
+      host: createHost(),
+    });
+    servers.push(server);
+
+    const response = await sendRequest(server.port, {
+      method: "GET",
+      path: "/missing",
+    });
+    expect(response.statusCode).toBe(404);
+    expect(response.headers["content-type"]).toContain("text/plain");
+    expect(response.body).toContain("Not found: /missing");
   });
 });
 
