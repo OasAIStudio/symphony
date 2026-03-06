@@ -6,7 +6,6 @@ This repository is currently documentation-first. The tracked files are:
 
 - `README.upstream.md`: upstream project overview and setup entry points
 - `SPEC.upstream.md`: upstream product and implementation spec
-- `IMPLEMENTATION_PLAN.md`: local planning notes for this workspace
 
 Add new implementation code in a top-level language or app directory such as `elixir/`, `src/`, or `apps/<name>/`, and keep tests adjacent in `test/` or `tests/`. Store design assets and media under a dedicated path like `.github/media/` or `docs/assets/`.
 
@@ -47,7 +46,7 @@ Do not commit secrets, tokens, or private board data. Keep local environment set
 
 ## Source of Truth
 
-Use `IMPLEMENTATION_PLAN.md` as the required development sequence: contributors should implement work in that order unless the plan is explicitly revised. Treat `SPEC.upstream.md` as the single source of truth for product behavior, feature scope, and acceptance criteria. If the plan, local notes, or code comments conflict with the spec, follow the spec and update the other artifacts to match it.
+Treat `SPEC.upstream.md` as the single source of truth for product behavior, feature scope, and acceptance criteria. If local notes or code comments conflict with the spec, follow the spec and update the other artifacts to match it.
 
 ## Branching & Worktree Workflow
 
