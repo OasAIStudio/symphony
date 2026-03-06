@@ -1,4 +1,5 @@
 import { promises as fs } from "node:fs";
+import { join } from "node:path";
 
 import type { Workspace } from "../domain/model.js";
 import { ERROR_CODES } from "../errors/codes.js";
@@ -25,6 +26,8 @@ export interface WorkspaceManagerOptions {
 }
 
 export class WorkspaceManager {
+  static readonly TEMP_ARTIFACT_PATHS = ["tmp", ".elixir_ls"] as const;
+
   readonly root: string;
   readonly #fs: FileSystemLike;
   readonly #hooks: WorkspaceHookRunner | null;
@@ -46,6 +49,7 @@ export class WorkspaceManager {
     try {
       await this.#fs.mkdir(workspaceRoot, { recursive: true });
       const createdNow = await this.#ensureWorkspaceDirectory(workspacePath);
+      await this.#removeTemporaryArtifacts(workspacePath);
       const workspace = {
         path: workspacePath,
         workspaceKey,
@@ -146,6 +150,17 @@ export class WorkspaceManager {
 
       throw error;
     }
+  }
+
+  async #removeTemporaryArtifacts(workspacePath: string): Promise<void> {
+    await Promise.all(
+      WorkspaceManager.TEMP_ARTIFACT_PATHS.map(async (relativePath) => {
+        await this.#fs.rm(join(workspacePath, relativePath), {
+          force: true,
+          recursive: true,
+        });
+      }),
+    );
   }
 }
 

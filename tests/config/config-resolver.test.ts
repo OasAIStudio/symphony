@@ -1,3 +1,4 @@
+import { homedir } from "node:os";
 import { join } from "node:path";
 
 import { describe, expect, it } from "vitest";
@@ -139,6 +140,27 @@ describe("config-resolver", () => {
     );
 
     expect(resolved.tracker.apiKey).toBe("canonical-secret");
+  });
+
+  it("expands ~ and env-backed workspace roots", () => {
+    const resolved = resolveWorkflowConfig(
+      {
+        workflowPath: "/repo/WORKFLOW.md",
+        promptTemplate: "Prompt",
+        config: {
+          workspace: {
+            root: "$WORKSPACE_ROOT",
+          },
+        },
+      },
+      {
+        WORKSPACE_ROOT: "~/symphony/workspaces",
+      },
+    );
+
+    expect(resolved.workspace.root).toBe(
+      join(homedir(), "symphony", "workspaces"),
+    );
   });
 
   it("blocks dispatch when required tracker settings are missing", () => {

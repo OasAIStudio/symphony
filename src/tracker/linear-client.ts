@@ -1,9 +1,9 @@
-import type { Issue } from "../domain/model.js";
-import { ERROR_CODES } from "../errors/codes.js";
 import {
   DEFAULT_LINEAR_NETWORK_TIMEOUT_MS,
   DEFAULT_LINEAR_PAGE_SIZE,
 } from "../config/defaults.js";
+import type { Issue } from "../domain/model.js";
+import { ERROR_CODES } from "../errors/codes.js";
 import { TrackerError, toTrackerRequestError } from "./errors.js";
 import {
   normalizeLinearIssue,

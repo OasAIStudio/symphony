@@ -1,11 +1,11 @@
 import { describe, expect, it } from "vitest";
 
+import { ERROR_CODES } from "../../src/errors/codes.js";
 import {
+  type TrackerError,
   normalizeLinearIssue,
   normalizeLinearIssueState,
-  TrackerError,
 } from "../../src/index.js";
-import { ERROR_CODES } from "../../src/errors/codes.js";
 
 describe("linear-normalize", () => {
   it("normalizes labels, blockers, integer priority, and timestamps", () => {

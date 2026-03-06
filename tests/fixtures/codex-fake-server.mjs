@@ -1,8 +1,9 @@
-import { realpathSync } from "node:fs";
+import { realpathSync, writeFileSync } from "node:fs";
 import process from "node:process";
 import readline from "node:readline";
 
 const scenario = process.argv[2] ?? "happy";
+const capturePath = process.argv[3] ?? null;
 const requests = [];
 let turnCount = 0;
 
@@ -85,6 +86,19 @@ async function handleMessage(message) {
     });
 
     if (scenario === "turn-timeout") {
+      return;
+    }
+
+    if (scenario === "capture-startup") {
+      captureRequests();
+      setTimeout(() => {
+        writeJson({
+          method: "turn/completed",
+          params: {
+            message: "Captured startup",
+          },
+        });
+      }, 10);
       return;
     }
 
@@ -194,6 +208,14 @@ async function handleMessage(message) {
       });
     }, 10);
   }
+}
+
+function captureRequests() {
+  if (!capturePath) {
+    throw new Error("capture-startup scenario requires a capture path");
+  }
+
+  writeFileSync(capturePath, JSON.stringify(requests, null, 2), "utf8");
 }
 
 function writeJson(message) {

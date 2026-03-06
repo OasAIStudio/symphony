@@ -120,9 +120,7 @@ function normalizePriority(value: unknown): number | null {
   return typeof value === "number" && Number.isInteger(value) ? value : null;
 }
 
-function normalizeLabels(
-  labels: LinearIssueNode["labels"],
-): string[] {
+function normalizeLabels(labels: LinearIssueNode["labels"]): string[] {
   const nodes = labels?.nodes;
   if (!Array.isArray(nodes)) {
     return [];
@@ -152,13 +150,16 @@ function normalizeBlockedBy(
 }
 
 function normalizeBlocker(
-  sourceIssue: {
-    id?: unknown;
-    identifier?: unknown;
-    state?: {
-      name?: unknown;
-    } | null;
-  } | null | undefined,
+  sourceIssue:
+    | {
+        id?: unknown;
+        identifier?: unknown;
+        state?: {
+          name?: unknown;
+        } | null;
+      }
+    | null
+    | undefined,
 ): BlockerRef {
   return {
     id: typeof sourceIssue?.id === "string" ? sourceIssue.id : null,

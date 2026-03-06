@@ -1,4 +1,4 @@
-import { mkdtemp, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readdir, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -73,6 +73,23 @@ describe("WorkspaceManager", () => {
     await manager.createForIssue("ABC-123");
 
     expect(hookCalls).toEqual([first.path]);
+  });
+
+  it("removes tmp and .elixir_ls artifacts during workspace preparation", async () => {
+    const root = await createRoot();
+    const manager = new WorkspaceManager({ root });
+    const existing = await manager.createForIssue("ABC-123");
+
+    await mkdir(join(existing.path, "tmp"), { recursive: true });
+    await writeFile(join(existing.path, "tmp", "cache.txt"), "cache");
+    await mkdir(join(existing.path, ".elixir_ls"), { recursive: true });
+    await writeFile(join(existing.path, ".elixir_ls", "state"), "state");
+    await writeFile(join(existing.path, "keep.txt"), "keep");
+
+    const reused = await manager.createForIssue("ABC-123");
+
+    expect(reused.createdNow).toBe(false);
+    await expect(readdir(existing.path)).resolves.toEqual(["keep.txt"]);
   });
 
   it("runs beforeRemove as a best-effort hook when deleting an existing workspace", async () => {

@@ -2,7 +2,7 @@ import { mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
   WorkflowLoaderError,
@@ -13,6 +13,10 @@ import {
 import { ERROR_CODES } from "../../src/errors/codes.js";
 
 describe("workflow-loader", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
   it("parses YAML front matter and trims the prompt body", () => {
     const workflow = parseWorkflowContent(`---
 tracker:
@@ -91,6 +95,12 @@ Prompt`);
     expect(workflow.workflowPath).toBe(workflowPath);
     expect(workflow.promptTemplate).toBe("Prompt body");
     expect(resolveWorkflowPath(workflowPath)).toBe(workflowPath);
+  });
+
+  it("resolves to cwd/WORKFLOW.md when no explicit workflow path is provided", () => {
+    vi.spyOn(process, "cwd").mockReturnValue("/repo/current");
+
+    expect(resolveWorkflowPath()).toBe("/repo/current/WORKFLOW.md");
   });
 
   it("returns a typed missing-workflow error when the file does not exist", async () => {

@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -186,6 +186,124 @@ describe("CodexAppServerClient", () => {
 
     await client.close();
   });
+
+  it("sends the expected startup handshake payloads and advertises tools", async () => {
+    const workspace = await createWorkspace();
+    const capturePath = join(workspace, "requests.json");
+    const client = createClient("capture-startup", workspace, [], {
+      command: `${process.execPath} "${fixturePath}" capture-startup "${capturePath}"`,
+      capabilities: {
+        roots: ["workspace"],
+      },
+      tools: [
+        {
+          name: "linear_graphql",
+          description: "Run one GraphQL operation",
+        },
+      ],
+    });
+
+    await expect(
+      client.startSession({
+        prompt: "Start",
+        title: "ABC-123: Example",
+      }),
+    ).resolves.toMatchObject({
+      status: "completed",
+      threadId: "thread-1",
+      turnId: "turn-1",
+    });
+
+    const requests = JSON.parse(await readFile(capturePath, "utf8")) as Array<{
+      id?: number;
+      method?: string;
+      params?: Record<string, unknown>;
+    }>;
+
+    expect(
+      requests.map((request) => request.method ?? `response:${request.id}`),
+    ).toEqual(["initialize", "initialized", "thread/start", "turn/start"]);
+    expect(requests[0]?.params).toEqual({
+      clientInfo: {
+        name: "symphony-ts",
+        version: "0.1.0",
+      },
+      capabilities: {
+        roots: ["workspace"],
+      },
+    });
+    expect(requests[2]?.params).toMatchObject({
+      approvalPolicy: "full-auto",
+      sandbox: "workspace-write",
+      cwd: workspace,
+      tools: [
+        {
+          name: "linear_graphql",
+          description: "Run one GraphQL operation",
+        },
+      ],
+    });
+    expect(requests[3]?.params).toMatchObject({
+      threadId: "thread-1",
+      cwd: workspace,
+      title: "ABC-123: Example",
+      approvalPolicy: "full-auto",
+      sandboxPolicy: {
+        type: "workspace-write",
+      },
+      input: [{ type: "text", text: "Start" }],
+    });
+
+    await client.close();
+  });
+
+  it("launches the command through bash -lc", async () => {
+    const workspace = await createWorkspace();
+    const shellMarkerPath = join(workspace, "shell.txt");
+    const scriptPath = join(workspace, "server.mjs");
+    await writeFile(
+      scriptPath,
+      [
+        "import readline from 'node:readline';",
+        "const rl = readline.createInterface({ input: process.stdin, crlfDelay: Infinity });",
+        "rl.on('line', (line) => {",
+        "  const message = JSON.parse(line);",
+        "  if (message.method === 'initialize') {",
+        "    process.stdout.write(JSON.stringify({ id: message.id, result: { serverInfo: { name: 'capture' } } }) + '\\n');",
+        "    return;",
+        "  }",
+        "  if (message.method === 'thread/start') {",
+        "    process.stdout.write(JSON.stringify({ id: message.id, result: { thread: { id: 'thread-1' } } }) + '\\n');",
+        "    return;",
+        "  }",
+        "  if (message.method === 'turn/start') {",
+        "    process.stdout.write(JSON.stringify({ id: message.id, result: { turn: { id: 'turn-1' } } }) + '\\n');",
+        "    setTimeout(() => {",
+        "      process.stdout.write(JSON.stringify({ method: 'turn/completed', params: { message: 'ok' } }) + '\\n');",
+        "    }, 10);",
+        "  }",
+        "});",
+      ].join("\n"),
+      "utf8",
+    );
+
+    const client = createClient("happy", workspace, [], {
+      command: `printf '%s' \"$0\" > "${shellMarkerPath}"; exec ${process.execPath} "${scriptPath}"`,
+    });
+
+    await expect(
+      client.startSession({
+        prompt: "Start",
+        title: "ABC-123: Example",
+      }),
+    ).resolves.toMatchObject({
+      status: "completed",
+      sessionId: "thread-1-turn-1",
+    });
+
+    await expect(readFile(shellMarkerPath, "utf8")).resolves.toBe("bash");
+    await client.close();
+  });
 });
 
 function createClient(
@@ -193,22 +311,34 @@ function createClient(
   workspace: string,
   events: CodexClientEvent[],
   overrides?: Partial<{
+    command: string;
+    capabilities: Record<string, unknown>;
     readTimeoutMs: number;
     turnTimeoutMs: number;
     stallTimeoutMs: number;
+    tools: Array<{
+      name: string;
+      description?: string;
+      inputSchema?: Record<string, unknown>;
+    }>;
   }>,
 ): CodexAppServerClient {
   return new CodexAppServerClient({
-    command: `${process.execPath} "${fixturePath}" ${scenario}`,
+    command:
+      overrides?.command ?? `${process.execPath} "${fixturePath}" ${scenario}`,
     cwd: workspace,
     approvalPolicy: "full-auto",
     threadSandbox: "workspace-write",
     turnSandboxPolicy: {
       type: "workspace-write",
     },
-    readTimeoutMs: overrides?.readTimeoutMs ?? 250,
-    turnTimeoutMs: overrides?.turnTimeoutMs ?? 500,
+    readTimeoutMs: overrides?.readTimeoutMs ?? 1_000,
+    turnTimeoutMs: overrides?.turnTimeoutMs ?? 1_000,
     stallTimeoutMs: overrides?.stallTimeoutMs ?? 1_000,
+    ...(overrides?.capabilities === undefined
+      ? {}
+      : { capabilities: overrides.capabilities }),
+    ...(overrides?.tools === undefined ? {} : { tools: overrides.tools }),
     onEvent: (event) => {
       events.push(event);
     },

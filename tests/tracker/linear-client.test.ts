@@ -1,12 +1,12 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+import { ERROR_CODES } from "../../src/errors/codes.js";
 import {
   LINEAR_CANDIDATE_ISSUES_QUERY,
   LINEAR_ISSUE_STATES_BY_IDS_QUERY,
   LinearTrackerClient,
-  TrackerError,
+  type TrackerError,
 } from "../../src/index.js";
-import { ERROR_CODES } from "../../src/errors/codes.js";
 
 afterEach(() => {
   vi.restoreAllMocks();
@@ -140,7 +140,9 @@ describe("LinearTrackerClient", () => {
       fetchFn: vi.fn<typeof fetch>(),
     });
 
-    await expect(missingApiKeyClient.fetchIssueStatesByIds(["1"])).rejects.toThrow(
+    await expect(
+      missingApiKeyClient.fetchIssueStatesByIds(["1"]),
+    ).rejects.toThrow(
       expect.objectContaining<Partial<TrackerError>>({
         code: ERROR_CODES.missingTrackerApiKey,
       }),
@@ -154,9 +156,9 @@ describe("LinearTrackerClient", () => {
 
   it("maps non-200, GraphQL errors, malformed payloads, and missing cursors", async () => {
     const non200Client = createClient({
-      fetchFn: vi.fn<typeof fetch>().mockResolvedValue(
-        new Response("boom", { status: 500 }),
-      ),
+      fetchFn: vi
+        .fn<typeof fetch>()
+        .mockResolvedValue(new Response("boom", { status: 500 })),
     });
     await expect(non200Client.fetchCandidateIssues()).rejects.toThrow(
       expect.objectContaining<Partial<TrackerError>>({
@@ -223,7 +225,9 @@ describe("LinearTrackerClient", () => {
 
   it("maps transport failures to linear_api_request", async () => {
     const client = createClient({
-      fetchFn: vi.fn<typeof fetch>().mockRejectedValue(new Error("network down")),
+      fetchFn: vi
+        .fn<typeof fetch>()
+        .mockRejectedValue(new Error("network down")),
     });
 
     await expect(client.fetchCandidateIssues()).rejects.toThrow(
