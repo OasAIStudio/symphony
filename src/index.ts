@@ -13,6 +13,7 @@ export * from "./logging/fields.js";
 export * from "./logging/runtime-snapshot.js";
 export * from "./logging/session-metrics.js";
 export * from "./logging/structured-logger.js";
+export * from "./observability/dashboard-server.js";
 export * from "./orchestrator/core.js";
 export * from "./workspace/hooks.js";
 export * from "./tracker/errors.js";
