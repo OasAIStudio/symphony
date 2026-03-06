@@ -213,38 +213,48 @@ describe("AgentRunner", () => {
     });
   });
 
-  it("cancels the active run when aborted externally", async () => {
+  it("cancels the run when the orchestrator aborts the worker signal", async () => {
     const root = await createRoot();
     const close = vi.fn().mockResolvedValue(undefined);
     const controller = new AbortController();
     const runner = new AgentRunner({
       config: createConfig(root, "unused"),
-      tracker: createTracker(),
-      createCodexClient: (input) => ({
-        async startSession({ prompt, title }) {
-          return await new Promise((resolve, reject) => {
-            input.onEvent({
-              event: "session_started",
-              timestamp: new Date("2026-03-06T00:00:00.000Z").toISOString(),
-              codexAppServerPid: "1001",
-              sessionId: "thread-1-turn-1",
-              threadId: "thread-1",
-              turnId: "turn-1",
-            });
-            controller.signal.addEventListener(
-              "abort",
-              () => {
-                reject(new Error("Stopped due to terminal_state."));
-              },
-              { once: true },
-            );
-          });
-        },
-        async continueTurn() {
-          throw new Error("unexpected continuation turn");
-        },
-        close,
+      tracker: createTracker({
+        refreshStates: [
+          { id: "issue-1", identifier: "ABC-123", state: "In Progress" },
+        ],
       }),
+      createCodexClient: (input) =>
+        createStubCodexClient([], input, {
+          close,
+          startSession: async ({
+            prompt,
+          }: {
+            prompt: string;
+            title: string;
+          }) =>
+            await new Promise((resolve, reject) => {
+              const timeout = setTimeout(() => {
+                resolve({
+                  status: "completed" as const,
+                  threadId: "thread-1",
+                  turnId: "turn-1",
+                  sessionId: "thread-1-turn-1",
+                  usage: null,
+                  rateLimits: null,
+                  message: prompt,
+                });
+              }, 500);
+              controller.signal.addEventListener(
+                "abort",
+                () => {
+                  clearTimeout(timeout);
+                  reject(new Error("Stopped due to terminal_state."));
+                },
+                { once: true },
+              );
+            }),
+        }),
     });
 
     const pending = runner.run({
@@ -257,6 +267,7 @@ describe("AgentRunner", () => {
     await expect(pending).rejects.toMatchObject({
       name: "AgentRunnerError",
       status: "canceled_by_reconciliation",
+      failedPhase: "launching_agent_process",
       message: "Stopped due to terminal_state.",
     } satisfies Partial<AgentRunnerError>);
     expect(close).toHaveBeenCalled();
@@ -269,13 +280,30 @@ function createStubCodexClient(
   overrides?: Partial<{
     close: ReturnType<typeof vi.fn>;
     statuses: Array<"completed" | "failed" | "cancelled">;
+    startSession: (input: { prompt: string; title: string }) => Promise<{
+      status: "completed" | "failed" | "cancelled";
+      threadId: string;
+      turnId: string;
+      sessionId: string;
+      usage: {
+        inputTokens: number;
+        outputTokens: number;
+        totalTokens: number;
+      } | null;
+      rateLimits: Record<string, unknown> | null;
+      message: string | null;
+    }>;
   }>,
 ) {
   let turn = 0;
   const statuses = overrides?.statuses ?? ["completed"];
 
   return {
-    async startSession({ prompt }: { prompt: string; title: string }) {
+    async startSession({ prompt, title }: { prompt: string; title: string }) {
+      if (overrides?.startSession) {
+        return overrides.startSession({ prompt, title });
+      }
+
       turn += 1;
       prompts.push(prompt);
       input.onEvent({

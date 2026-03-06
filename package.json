@@ -3,6 +3,9 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
+  "bin": {
+    "symphony": "./dist/cli/main.js"
+  },
   "engines": {
     "node": ">=22.0.0",
     "pnpm": ">=10.0.0"
