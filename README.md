@@ -5,8 +5,8 @@
 > Harness Engineering is exactly what I want!
 > Not vibe coding. Not just giving OpenClaw a sentence and asking it to orchestrate the rest.
 
-`symphony-ts` is a TypeScript implementation of the original
-[openai/symphony](https://github.com/openai/symphony) project.
+**`symphony-ts` is a TypeScript implementation of the original
+[openai/symphony](https://github.com/openai/symphony) project.**
 
 It starts with Linear and is designed to support additional tracker platforms over time.
 
