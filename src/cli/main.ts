@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 
+import { realpathSync } from "node:fs";
 import { resolve } from "node:path";
-import { pathToFileURL } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 import { resolveWorkflowConfig } from "../config/config-resolver.js";
 import { WORKFLOW_FILENAME } from "../config/defaults.js";
@@ -220,6 +221,23 @@ export async function main(): Promise<void> {
   process.exitCode = exitCode;
 }
 
+export function shouldRunAsCli(
+  importMetaUrl: string,
+  entryPath: string | undefined,
+): boolean {
+  if (!entryPath) {
+    return false;
+  }
+
+  try {
+    return (
+      realpathSync(fileURLToPath(importMetaUrl)) === realpathSync(entryPath)
+    );
+  } catch {
+    return importMetaUrl === pathToFileURL(entryPath).href;
+  }
+}
+
 function readValueFlag(
   argv: readonly string[],
   index: number,
@@ -268,9 +286,6 @@ function renderUsage(): string {
   ].join("\n");
 }
 
-if (
-  process.argv[1] &&
-  import.meta.url === pathToFileURL(process.argv[1]).href
-) {
+if (shouldRunAsCli(import.meta.url, process.argv[1])) {
   void main();
 }

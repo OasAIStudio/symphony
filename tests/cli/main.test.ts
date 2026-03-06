@@ -1,6 +1,7 @@
-import { mkdtemp, writeFile } from "node:fs/promises";
+import { mkdtemp, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { pathToFileURL } from "node:url";
 
 import { describe, expect, it, vi } from "vitest";
 
@@ -9,6 +10,7 @@ import {
   applyCliOverrides,
   parseCliArgs,
   runCli,
+  shouldRunAsCli,
 } from "../../src/cli/main.js";
 import type { ResolvedWorkflowConfig } from "../../src/config/types.js";
 
@@ -59,6 +61,30 @@ describe("cli", () => {
 
     expect(runtime.config.server.port).toBe(8080);
     expect(runtime.logsRoot).toBe("/repo/runtime-logs");
+  });
+
+  it("treats symlinked executables as the CLI entrypoint", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "symphony-task-cli-link-"));
+    const cliPath = join(workspace, "main.js");
+    const symlinkPath = join(workspace, "symphony");
+
+    await writeFile(cliPath, "#!/usr/bin/env node\n", "utf8");
+    await symlink(cliPath, symlinkPath);
+
+    expect(shouldRunAsCli(pathToFileURL(cliPath).href, symlinkPath)).toBe(true);
+  });
+
+  it("returns false when the resolved entrypoint differs from the module path", async () => {
+    const workspace = await mkdtemp(
+      join(tmpdir(), "symphony-task-cli-mismatch-"),
+    );
+    const cliPath = join(workspace, "main.js");
+    const otherPath = join(workspace, "other.js");
+
+    await writeFile(cliPath, "#!/usr/bin/env node\n", "utf8");
+    await writeFile(otherPath, "#!/usr/bin/env node\n", "utf8");
+
+    expect(shouldRunAsCli(pathToFileURL(cliPath).href, otherPath)).toBe(false);
   });
 
   it("defaults to loading ./WORKFLOW.md from cwd when no workflow path is given", async () => {
