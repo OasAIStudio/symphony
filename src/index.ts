@@ -1,3 +1,4 @@
+export * from "./agent/prompt-builder.js";
 export * from "./config/defaults.js";
 export * from "./config/config-resolver.js";
 export * from "./config/types.js";
