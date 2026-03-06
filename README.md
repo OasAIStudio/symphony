@@ -25,6 +25,15 @@ moving from managing coding agents to managing work that needs to get done.
 
 ## Running Symphony
 
+## RoadMap
+
+| Item | Status |
+| --- | --- |
+| Implement Symphony and Linear integration | Complete |
+| Support more platforms | Planned |
+| Support a local board GUI | Planned |
+| Support more coding agents such as Claude Code scheduling | Planned |
+
 ### Requirements
 
 - Node.js `>= 22`
