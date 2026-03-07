@@ -104,6 +104,9 @@ as `WORKFLOW.md`, then change these fields before starting Symphony:
 
 If you want the dashboard, keep `server.port` in the workflow or pass `--port` on the CLI.
 
+For a complete reference covering every supported field with defaults and inline documentation, see
+[docs/WORKFLOW.template.md](docs/WORKFLOW.template.md).
+
 ### What You Get
 
 Once Symphony is running, it will:
