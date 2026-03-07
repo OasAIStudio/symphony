@@ -525,190 +525,490 @@ function renderDashboardHtml(
   snapshot: RuntimeSnapshot,
   options: DashboardRenderOptions,
 ): string {
+  const initialRuntimeLabel = formatRuntimeSeconds(
+    snapshot.codex_totals.seconds_running,
+  );
+  const totalTokensLabel = formatInteger(snapshot.codex_totals.total_tokens);
+  const inputTokensLabel = formatInteger(snapshot.codex_totals.input_tokens);
+  const outputTokensLabel = formatInteger(snapshot.codex_totals.output_tokens);
+  const initialRateLimits = prettyValue(snapshot.rate_limits);
+
   return `<!doctype html>
 <html lang="en">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Symphony Dashboard</title>
+    <title>Symphony Observability</title>
     <style>
       :root {
         color-scheme: light;
-        font-family: ui-sans-serif, system-ui, sans-serif;
-        background: #f4efe7;
-        color: #1e1b18;
+        --page: #f7f7f8;
+        --page-soft: #fbfbfc;
+        --page-deep: #ececf1;
+        --card: rgba(255, 255, 255, 0.94);
+        --card-muted: #f3f4f6;
+        --ink: #202123;
+        --muted: #6e6e80;
+        --line: #ececf1;
+        --line-strong: #d9d9e3;
+        --accent: #10a37f;
+        --accent-ink: #0f513f;
+        --accent-soft: #e8faf4;
+        --danger: #b42318;
+        --danger-soft: #fef3f2;
+        --warning: #8a5a00;
+        --warning-soft: #fff7e8;
+        --warning-line: #f1d8a6;
+        --shadow-sm: 0 1px 2px rgba(16, 24, 40, 0.05);
+        --shadow-lg: 0 20px 50px rgba(15, 23, 42, 0.08);
+      }
+      * {
+        box-sizing: border-box;
+      }
+      html {
+        background: var(--page);
       }
       body {
         margin: 0;
-        padding: 24px;
+        min-height: 100vh;
         background:
-          radial-gradient(circle at top left, rgba(198, 110, 66, 0.16), transparent 28rem),
-          linear-gradient(180deg, #f8f3eb 0%, #efe4d3 100%);
+          radial-gradient(circle at top, rgba(16, 163, 127, 0.12) 0%, rgba(16, 163, 127, 0) 30%),
+          linear-gradient(180deg, var(--page-soft) 0%, var(--page) 24%, #f3f4f6 100%);
+        color: var(--ink);
+        font-family: "Sohne", "SF Pro Text", "Helvetica Neue", "Segoe UI", sans-serif;
+        line-height: 1.5;
       }
-      main {
-        max-width: 1100px;
+      a {
+        color: var(--ink);
+        text-decoration: none;
+        transition: color 140ms ease;
+      }
+      a:hover {
+        color: var(--accent);
+      }
+      button {
+        appearance: none;
+        border: 1px solid var(--accent);
+        background: var(--accent);
+        color: white;
+        border-radius: 999px;
+        padding: 0.72rem 1.08rem;
+        cursor: pointer;
+        font: inherit;
+        font-weight: 600;
+        letter-spacing: -0.01em;
+        box-shadow: 0 8px 20px rgba(16, 163, 127, 0.18);
+        transition:
+          transform 140ms ease,
+          box-shadow 140ms ease,
+          background 140ms ease,
+          border-color 140ms ease;
+      }
+      button:hover {
+        transform: translateY(-1px);
+        box-shadow: 0 12px 24px rgba(16, 163, 127, 0.22);
+      }
+      .subtle-button {
+        border: 1px solid var(--line-strong);
+        background: rgba(255, 255, 255, 0.72);
+        color: var(--muted);
+        padding: 0.34rem 0.72rem;
+        font-size: 0.82rem;
+        letter-spacing: 0.01em;
+        box-shadow: none;
+      }
+      .subtle-button:hover {
+        transform: none;
+        box-shadow: none;
+        background: white;
+        border-color: var(--muted);
+        color: var(--ink);
+      }
+      code,
+      pre,
+      .mono {
+        font-family: "Sohne Mono", "SFMono-Regular", "SF Mono", Consolas, "Liberation Mono", monospace;
+      }
+      .mono,
+      .numeric {
+        font-variant-numeric: tabular-nums slashed-zero;
+        font-feature-settings: "tnum" 1, "zero" 1;
+      }
+      .app-shell {
+        max-width: 1280px;
         margin: 0 auto;
+        padding: 2rem 1rem 3.5rem;
       }
-      h1, h2 {
-        margin: 0 0 12px;
+      .dashboard-shell {
+        display: grid;
+        gap: 1rem;
       }
-      .header {
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        gap: 16px;
-        margin-bottom: 16px;
+      .hero-card,
+      .section-card,
+      .metric-card {
+        background: var(--card);
+        border: 1px solid rgba(217, 217, 227, 0.82);
+        box-shadow: var(--shadow-sm);
+        backdrop-filter: blur(18px);
       }
-      .status {
+      .hero-card {
+        border-radius: 28px;
+        padding: clamp(1.25rem, 3vw, 2rem);
+        box-shadow: var(--shadow-lg);
+      }
+      .hero-grid {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
+        gap: 1.25rem;
+        align-items: start;
+      }
+      .eyebrow {
+        margin: 0;
+        color: var(--muted);
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        font-size: 0.76rem;
+        font-weight: 600;
+      }
+      .hero-title {
+        margin: 0.35rem 0 0;
+        font-size: clamp(2rem, 4vw, 3.3rem);
+        line-height: 0.98;
+        letter-spacing: -0.04em;
+      }
+      .hero-copy {
+        margin: 0.75rem 0 0;
+        max-width: 46rem;
+        color: var(--muted);
+        font-size: 1rem;
+      }
+      .status-stack {
+        display: grid;
+        justify-items: end;
+        align-content: start;
+        min-width: min(100%, 9rem);
+      }
+      .status-badge {
         display: inline-flex;
         align-items: center;
-        gap: 8px;
-        padding: 8px 12px;
+        gap: 0.45rem;
+        min-height: 2rem;
+        padding: 0.35rem 0.78rem;
         border-radius: 999px;
-        background: rgba(255, 252, 247, 0.9);
-        border: 1px solid rgba(59, 44, 32, 0.12);
-        color: #5f5449;
-      }
-      .status-dot {
-        width: 10px;
-        height: 10px;
-        border-radius: 999px;
-        background: #d26c2f;
-      }
-      .status-live .status-dot {
-        background: #2f8f46;
-      }
-      .grid {
-        display: grid;
-        gap: 16px;
-        grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-        margin: 20px 0 28px;
-      }
-      .card, section {
-        background: rgba(255, 252, 247, 0.9);
-        border: 1px solid rgba(59, 44, 32, 0.12);
-        border-radius: 16px;
-        box-shadow: 0 10px 30px rgba(74, 46, 20, 0.08);
-      }
-      .card {
-        padding: 18px;
-      }
-      .metric {
-        font-size: 2rem;
+        border: 1px solid var(--line);
+        background: var(--card-muted);
+        color: var(--muted);
+        font-size: 0.82rem;
         font-weight: 700;
+        letter-spacing: 0.01em;
       }
-      section {
-        padding: 20px;
-        margin-bottom: 18px;
+      .status-badge-dot {
+        width: 0.52rem;
+        height: 0.52rem;
+        border-radius: 999px;
+        background: currentColor;
+        opacity: 0.9;
       }
-      table {
+      .status-badge-live {
+        background: var(--accent-soft);
+        border-color: rgba(16, 163, 127, 0.18);
+        color: var(--accent-ink);
+      }
+      .metric-grid {
+        display: grid;
+        gap: 0.85rem;
+        grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      }
+      .metric-card {
+        border-radius: 22px;
+        padding: 1rem 1.05rem 1.1rem;
+      }
+      .metric-label {
+        margin: 0;
+        color: var(--muted);
+        font-size: 0.82rem;
+        font-weight: 600;
+        letter-spacing: 0.01em;
+      }
+      .metric-value {
+        margin: 0.35rem 0 0;
+        font-size: clamp(1.6rem, 2vw, 2.1rem);
+        line-height: 1.05;
+        letter-spacing: -0.03em;
+      }
+      .metric-detail {
+        margin: 0.45rem 0 0;
+        color: var(--muted);
+        font-size: 0.88rem;
+      }
+      .section-card {
+        border-radius: 24px;
+        padding: 1.15rem;
+      }
+      .section-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start;
+        gap: 1rem;
+        flex-wrap: wrap;
+      }
+      .section-title {
+        margin: 0;
+        font-size: 1.08rem;
+        line-height: 1.2;
+        letter-spacing: -0.02em;
+      }
+      .section-copy {
+        margin: 0.35rem 0 0;
+        color: var(--muted);
+        font-size: 0.94rem;
+      }
+      .table-wrap {
+        overflow-x: auto;
+        margin-top: 1rem;
+      }
+      .data-table {
         width: 100%;
+        min-width: 720px;
         border-collapse: collapse;
       }
-      th, td {
+      .data-table-running {
+        table-layout: fixed;
+        min-width: 980px;
+      }
+      .data-table th {
+        padding: 0 0.5rem 0.75rem 0;
         text-align: left;
-        padding: 10px 8px;
-        border-bottom: 1px solid rgba(59, 44, 32, 0.12);
+        color: var(--muted);
+        font-size: 0.78rem;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+      }
+      .data-table td {
+        padding: 0.9rem 0.5rem 0.9rem 0;
+        border-top: 1px solid var(--line);
         vertical-align: top;
+        font-size: 0.94rem;
       }
-      th {
-        font-size: 0.875rem;
-        color: #5f5449;
+      .issue-stack,
+      .session-stack,
+      .detail-stack,
+      .token-stack {
+        display: grid;
+        gap: 0.24rem;
+        min-width: 0;
       }
-      pre {
-        white-space: pre-wrap;
-        word-break: break-word;
-        margin: 0;
+      .event-text {
+        font-weight: 500;
+        line-height: 1.45;
+        max-width: 100%;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .event-meta {
+        max-width: 100%;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .state-badge {
+        display: inline-flex;
+        align-items: center;
+        min-height: 1.85rem;
+        padding: 0.3rem 0.68rem;
+        border-radius: 999px;
+        border: 1px solid var(--line);
+        background: var(--card-muted);
+        color: var(--ink);
+        font-size: 0.8rem;
+        font-weight: 600;
+        line-height: 1;
+      }
+      .state-badge-active {
+        background: var(--accent-soft);
+        border-color: rgba(16, 163, 127, 0.18);
+        color: var(--accent-ink);
+      }
+      .state-badge-warning {
+        background: var(--warning-soft);
+        border-color: var(--warning-line);
+        color: var(--warning);
+      }
+      .state-badge-danger {
+        background: var(--danger-soft);
+        border-color: #f6d3cf;
+        color: var(--danger);
+      }
+      .issue-id {
+        font-weight: 600;
+        letter-spacing: -0.01em;
+      }
+      .issue-link {
+        color: var(--muted);
+        font-size: 0.86rem;
       }
       .muted {
-        color: #6e6256;
+        color: var(--muted);
+      }
+      .code-panel {
+        margin-top: 1rem;
+        padding: 1rem;
+        border-radius: 18px;
+        background: #f5f5f7;
+        border: 1px solid var(--line);
+        color: #353740;
+        font-size: 0.9rem;
+        white-space: pre-wrap;
+        word-break: break-word;
+      }
+      .empty-state {
+        margin: 1rem 0 0;
+        color: var(--muted);
+      }
+      @media (max-width: 860px) {
+        .app-shell {
+          padding: 1rem 0.85rem 2rem;
+        }
+        .hero-grid {
+          grid-template-columns: 1fr;
+        }
+        .status-stack {
+          justify-items: start;
+        }
+        .metric-grid {
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+        }
+      }
+      @media (max-width: 560px) {
+        .metric-grid {
+          grid-template-columns: 1fr;
+        }
+        .section-card,
+        .hero-card {
+          border-radius: 20px;
+          padding: 1rem;
+        }
       }
     </style>
   </head>
   <body>
-    <main>
-      <div class="header">
-        <div>
-          <h1>Symphony Dashboard</h1>
-          <p id="generated-at" class="muted">Generated at ${escapeHtml(snapshot.generated_at)}</p>
-        </div>
-        <div id="live-status" class="status${
-          options.liveUpdatesEnabled ? " status-live" : ""
-        }">
-          <span class="status-dot"></span>
-          <span>${
-            options.liveUpdatesEnabled
-              ? "Live updates connected"
-              : "Static snapshot"
-          }</span>
-        </div>
-      </div>
+    <main class="app-shell">
+      <section class="dashboard-shell">
+        <header class="hero-card">
+          <div class="hero-grid">
+            <div>
+              <p class="eyebrow">Symphony Observability</p>
+              <h1 class="hero-title">Operations Dashboard</h1>
+              <p class="hero-copy">
+                Current state, retry pressure, token usage, and orchestration health for the active Symphony runtime.
+              </p>
+            </div>
 
-      <div class="grid">
-        <div class="card">
-          <div class="muted">Running</div>
-          <div id="metric-running" class="metric">${snapshot.counts.running}</div>
-        </div>
-        <div class="card">
-          <div class="muted">Retrying</div>
-          <div id="metric-retrying" class="metric">${snapshot.counts.retrying}</div>
-        </div>
-        <div class="card">
-          <div class="muted">Input Tokens</div>
-          <div id="metric-input" class="metric">${snapshot.codex_totals.input_tokens}</div>
-        </div>
-        <div class="card">
-          <div class="muted">Output Tokens</div>
-          <div id="metric-output" class="metric">${snapshot.codex_totals.output_tokens}</div>
-        </div>
-        <div class="card">
-          <div class="muted">Total Tokens</div>
-          <div id="metric-total" class="metric">${snapshot.codex_totals.total_tokens}</div>
-        </div>
-        <div class="card">
-          <div class="muted">Seconds Running</div>
-          <div id="metric-seconds" class="metric">${snapshot.codex_totals.seconds_running.toFixed(1)}</div>
-        </div>
-      </div>
+            <div class="status-stack">
+              <span id="live-status" class="status-badge${
+                options.liveUpdatesEnabled ? " status-badge-live" : ""
+              }">
+                <span class="status-badge-dot"></span>
+                <span>${options.liveUpdatesEnabled ? "Live" : "Offline"}</span>
+              </span>
+            </div>
+          </div>
+        </header>
 
-      <section>
-        <h2>Running Sessions</h2>
-        <table>
-          <thead>
-            <tr>
-              <th>Issue</th>
-              <th>State</th>
-              <th>Session</th>
-              <th>Turns</th>
-              <th>Last Event</th>
-              <th>Last Message</th>
-              <th>Last Event At</th>
-            </tr>
-          </thead>
-          <tbody id="running-rows">${renderRunningRows(snapshot)}</tbody>
-        </table>
-      </section>
+        <section class="metric-grid">
+          <article class="metric-card">
+            <p class="metric-label">Running</p>
+            <p id="metric-running" class="metric-value numeric">${snapshot.counts.running}</p>
+            <p class="metric-detail">Active issue sessions in the current runtime.</p>
+          </article>
 
-      <section>
-        <h2>Retry Queue</h2>
-        <table>
-          <thead>
-            <tr>
-              <th>Issue</th>
-              <th>Attempt</th>
-              <th>Due At</th>
-              <th>Error</th>
-            </tr>
-          </thead>
-          <tbody id="retry-rows">${renderRetryRows(snapshot)}</tbody>
-        </table>
-      </section>
+          <article class="metric-card">
+            <p class="metric-label">Retrying</p>
+            <p id="metric-retrying" class="metric-value numeric">${snapshot.counts.retrying}</p>
+            <p class="metric-detail">Issues waiting for the next retry window.</p>
+          </article>
 
-      <section>
-        <h2>Rate Limits</h2>
-        <pre id="rate-limits">${escapeHtml(
-          JSON.stringify(snapshot.rate_limits, null, 2) ?? "null",
-        )}</pre>
+          <article class="metric-card">
+            <p class="metric-label">Total tokens</p>
+            <p id="metric-total" class="metric-value numeric">${totalTokensLabel}</p>
+            <p id="metric-total-detail" class="metric-detail numeric">In ${inputTokensLabel} / Out ${outputTokensLabel}</p>
+          </article>
+
+          <article class="metric-card">
+            <p class="metric-label">Runtime</p>
+            <p id="metric-runtime" class="metric-value numeric">${initialRuntimeLabel}</p>
+            <p id="generated-at" class="metric-detail">Generated at ${escapeHtml(snapshot.generated_at)}</p>
+          </article>
+        </section>
+
+        <section class="section-card">
+          <div class="section-header">
+            <div>
+              <h2 class="section-title">Rate limits</h2>
+              <p class="section-copy">Latest upstream rate-limit snapshot, when available.</p>
+            </div>
+          </div>
+
+          <pre id="rate-limits" class="code-panel">${escapeHtml(initialRateLimits)}</pre>
+        </section>
+
+        <section class="section-card">
+          <div class="section-header">
+            <div>
+              <h2 class="section-title">Running sessions</h2>
+              <p class="section-copy">Active issues, last known agent activity, and token usage.</p>
+            </div>
+          </div>
+
+          <div class="table-wrap">
+            <table class="data-table data-table-running">
+              <colgroup>
+                <col style="width: 12rem;" />
+                <col style="width: 8rem;" />
+                <col style="width: 7.5rem;" />
+                <col style="width: 8.5rem;" />
+                <col />
+                <col style="width: 10rem;" />
+              </colgroup>
+              <thead>
+                <tr>
+                  <th>Issue</th>
+                  <th>State</th>
+                  <th>Session</th>
+                  <th>Runtime / turns</th>
+                  <th>Codex update</th>
+                  <th>Tokens</th>
+                </tr>
+              </thead>
+              <tbody id="running-rows">${renderRunningRows(snapshot)}</tbody>
+            </table>
+          </div>
+        </section>
+
+        <section class="section-card">
+          <div class="section-header">
+            <div>
+              <h2 class="section-title">Retry queue</h2>
+              <p class="section-copy">Issues waiting for the next retry window.</p>
+            </div>
+          </div>
+
+          <div class="table-wrap">
+            <table class="data-table" style="min-width: 680px;">
+              <thead>
+                <tr>
+                  <th>Issue</th>
+                  <th>Attempt</th>
+                  <th>Due at</th>
+                  <th>Error</th>
+                </tr>
+              </thead>
+              <tbody id="retry-rows">${renderRetryRows(snapshot)}</tbody>
+            </table>
+          </div>
+        </section>
       </section>
     </main>
     <script>
@@ -721,7 +1021,7 @@ function renderDashboardHtml(
         const liveUpdatesEnabled = window.__SYMPHONY_LIVE_UPDATES__ === true;
 
         function escapeHtml(value) {
-          return String(value)
+          return String(value ?? '')
             .replaceAll("&", "&amp;")
             .replaceAll("<", "&lt;")
             .replaceAll(">", "&gt;")
@@ -729,35 +1029,104 @@ function renderDashboardHtml(
             .replaceAll("'", "&#39;");
         }
 
+        function formatInteger(value) {
+          const number = Number(value);
+          if (!Number.isFinite(number)) {
+            return 'n/a';
+          }
+          return Math.trunc(number).toLocaleString('en-US');
+        }
+
+        function formatRuntimeSeconds(value) {
+          const number = Number(value);
+          if (!Number.isFinite(number) || number < 0) {
+            return '0m 0s';
+          }
+          const wholeSeconds = Math.max(0, Math.trunc(number));
+          const mins = Math.floor(wholeSeconds / 60);
+          const secs = wholeSeconds % 60;
+          return mins + 'm ' + secs + 's';
+        }
+
+        function runtimeSecondsFromStartedAt(startedAt, generatedAt) {
+          const start = Date.parse(startedAt);
+          const generated = Date.parse(generatedAt);
+          if (!Number.isFinite(start) || !Number.isFinite(generated) || generated < start) {
+            return 0;
+          }
+          return (generated - start) / 1000;
+        }
+
+        function formatRuntimeAndTurns(row, generatedAt) {
+          const runtime = formatRuntimeSeconds(runtimeSecondsFromStartedAt(row.started_at, generatedAt));
+          if (Number.isInteger(row.turn_count) && row.turn_count > 0) {
+            return runtime + ' / ' + row.turn_count;
+          }
+          return runtime;
+        }
+
+        function stateBadgeClass(state) {
+          const normalized = String(state || '').toLowerCase();
+          if (normalized.includes('progress') || normalized.includes('running') || normalized.includes('active')) {
+            return 'state-badge state-badge-active';
+          }
+          if (normalized.includes('blocked') || normalized.includes('error') || normalized.includes('failed')) {
+            return 'state-badge state-badge-danger';
+          }
+          if (normalized.includes('todo') || normalized.includes('queued') || normalized.includes('pending') || normalized.includes('retry')) {
+            return 'state-badge state-badge-warning';
+          }
+          return 'state-badge';
+        }
+
+        function prettyValue(value) {
+          if (value == null) {
+            return 'n/a';
+          }
+          try {
+            return JSON.stringify(value, null, 2);
+          } catch (_error) {
+            return String(value);
+          }
+        }
+
         function renderRunningRows(next) {
           if (!next.running || next.running.length === 0) {
-            return '<tr><td colspan="7">No active sessions.</td></tr>';
+            return '<tr><td colspan="6"><p class="empty-state">No active sessions.</p></td></tr>';
           }
 
           return next.running.map(function (row) {
+            const sessionCell = row.session_id
+              ? '<button type="button" class="subtle-button" data-label="Copy ID" data-copy="' + escapeHtml(row.session_id) + '" onclick="navigator.clipboard.writeText(this.dataset.copy); this.textContent = \\'Copied\\'; clearTimeout(this._copyTimer); this._copyTimer = setTimeout(() => { this.textContent = this.dataset.label }, 1200);">Copy ID</button>'
+              : '<span class="muted">n/a</span>';
+
+            const message = row.last_message || row.last_event || 'n/a';
+            const eventMeta = row.last_event
+              ? escapeHtml(row.last_event) + (row.last_event_at ? ' · <span class="mono numeric">' + escapeHtml(row.last_event_at) + '</span>' : '')
+              : 'n/a';
+
             return '<tr>' +
-              '<td>' + escapeHtml(row.issue_identifier) + '</td>' +
-              '<td>' + escapeHtml(row.state) + '</td>' +
-              '<td>' + escapeHtml(row.session_id || '-') + '</td>' +
-              '<td>' + row.turn_count + '</td>' +
-              '<td>' + escapeHtml(row.last_event || '-') + '</td>' +
-              '<td>' + escapeHtml(row.last_message || '-') + '</td>' +
-              '<td>' + escapeHtml(row.last_event_at || '-') + '</td>' +
+              '<td><div class="issue-stack"><span class="issue-id">' + escapeHtml(row.issue_identifier) + '</span><a class="issue-link" href="/api/v1/' + encodeURIComponent(row.issue_identifier) + '">JSON details</a></div></td>' +
+              '<td><span class="' + stateBadgeClass(row.state) + '">' + escapeHtml(row.state) + '</span></td>' +
+              '<td><div class="session-stack">' + sessionCell + '</div></td>' +
+              '<td class="numeric">' + formatRuntimeAndTurns(row, next.generated_at) + '</td>' +
+              '<td><div class="detail-stack"><span class="event-text" title="' + escapeHtml(message) + '">' + escapeHtml(message) + '</span><span class="muted event-meta">' + eventMeta + '</span></div></td>' +
+              '<td><div class="token-stack numeric"><span>Total: ' + formatInteger(row.tokens?.total_tokens) + '</span><span class="muted">In ' + formatInteger(row.tokens?.input_tokens) + ' / Out ' + formatInteger(row.tokens?.output_tokens) + '</span></div></td>' +
               '</tr>';
           }).join('');
         }
 
         function renderRetryRows(next) {
           if (!next.retrying || next.retrying.length === 0) {
-            return '<tr><td colspan="4">No queued retries.</td></tr>';
+            return '<tr><td colspan="4"><p class="empty-state">No issues are currently backing off.</p></td></tr>';
           }
 
           return next.retrying.map(function (row) {
             return '<tr>' +
-              '<td>' + escapeHtml(row.issue_identifier || row.issue_id) + '</td>' +
-              '<td>' + row.attempt + '</td>' +
-              '<td>' + escapeHtml(row.due_at) + '</td>' +
-              '<td>' + escapeHtml(row.error || '-') + '</td>' +
+              '<td><div class="issue-stack"><span class="issue-id">' + escapeHtml(row.issue_identifier || row.issue_id) + '</span><a class="issue-link" href="/api/v1/' + encodeURIComponent(row.issue_identifier || row.issue_id) + '">JSON details</a></div></td>' +
+              '<td>' + escapeHtml(row.attempt) + '</td>' +
+              '<td class="mono">' + escapeHtml(row.due_at || 'n/a') + '</td>' +
+              '<td>' + escapeHtml(row.error || 'n/a') + '</td>' +
               '</tr>';
           }).join('');
         }
@@ -765,7 +1134,7 @@ function renderDashboardHtml(
         function setStatus(text, live) {
           const element = document.getElementById('live-status');
           if (!element) return;
-          element.className = live ? 'status status-live' : 'status';
+          element.className = live ? 'status-badge status-badge-live' : 'status-badge';
           const label = element.querySelector('span:last-child');
           if (label) {
             label.textContent = text;
@@ -776,13 +1145,12 @@ function renderDashboardHtml(
           document.getElementById('generated-at').textContent = 'Generated at ' + next.generated_at;
           document.getElementById('metric-running').textContent = String(next.counts.running);
           document.getElementById('metric-retrying').textContent = String(next.counts.retrying);
-          document.getElementById('metric-input').textContent = String(next.codex_totals.input_tokens);
-          document.getElementById('metric-output').textContent = String(next.codex_totals.output_tokens);
-          document.getElementById('metric-total').textContent = String(next.codex_totals.total_tokens);
-          document.getElementById('metric-seconds').textContent = Number(next.codex_totals.seconds_running).toFixed(1);
+          document.getElementById('metric-total').textContent = formatInteger(next.codex_totals.total_tokens);
+          document.getElementById('metric-total-detail').textContent = 'In ' + formatInteger(next.codex_totals.input_tokens) + ' / Out ' + formatInteger(next.codex_totals.output_tokens);
+          document.getElementById('metric-runtime').textContent = formatRuntimeSeconds(next.codex_totals.seconds_running);
           document.getElementById('running-rows').innerHTML = renderRunningRows(next);
           document.getElementById('retry-rows').innerHTML = renderRetryRows(next);
-          document.getElementById('rate-limits').textContent = JSON.stringify(next.rate_limits, null, 2) || 'null';
+          document.getElementById('rate-limits').textContent = prettyValue(next.rate_limits);
         }
 
         render(snapshot);
@@ -792,19 +1160,19 @@ function renderDashboardHtml(
 
         const source = new window.EventSource('/api/v1/events');
         source.addEventListener('open', function () {
-          setStatus('Live updates connected', true);
+          setStatus('Live', true);
         });
         source.addEventListener('snapshot', function (event) {
           try {
             const next = JSON.parse(event.data);
             render(next);
-            setStatus('Live updates connected', true);
+            setStatus('Live', true);
           } catch (_error) {
-            setStatus('Live updates degraded', false);
+            setStatus('Degraded', false);
           }
         });
         source.addEventListener('error', function () {
-          setStatus('Reconnecting live updates…', false);
+          setStatus('Reconnecting', false);
         });
       })();
     </script>
@@ -814,18 +1182,64 @@ function renderDashboardHtml(
 
 function renderRunningRows(snapshot: RuntimeSnapshot): string {
   return snapshot.running.length === 0
-    ? '<tr><td colspan="7">No active sessions.</td></tr>'
+    ? '<tr><td colspan="6"><p class="empty-state">No active sessions.</p></td></tr>'
     : snapshot.running
         .map(
           (row) => `
             <tr>
-              <td>${escapeHtml(row.issue_identifier)}</td>
-              <td>${escapeHtml(row.state)}</td>
-              <td>${escapeHtml(row.session_id ?? "-")}</td>
-              <td>${row.turn_count}</td>
-              <td>${escapeHtml(row.last_event ?? "-")}</td>
-              <td>${escapeHtml(row.last_message ?? "-")}</td>
-              <td>${escapeHtml(row.last_event_at ?? "-")}</td>
+              <td>
+                <div class="issue-stack">
+                  <span class="issue-id">${escapeHtml(row.issue_identifier)}</span>
+                  <a class="issue-link" href="/api/v1/${encodeURIComponent(
+                    row.issue_identifier,
+                  )}">JSON details</a>
+                </div>
+              </td>
+              <td>
+                <span class="${stateBadgeClass(row.state)}">${escapeHtml(row.state)}</span>
+              </td>
+              <td>
+                <div class="session-stack">
+                  ${
+                    row.session_id === null
+                      ? '<span class="muted">n/a</span>'
+                      : `<button type="button" class="subtle-button" data-label="Copy ID" data-copy="${escapeHtml(
+                          row.session_id,
+                        )}" onclick="navigator.clipboard.writeText(this.dataset.copy); this.textContent = 'Copied'; clearTimeout(this._copyTimer); this._copyTimer = setTimeout(() => { this.textContent = this.dataset.label }, 1200);">Copy ID</button>`
+                  }
+                </div>
+              </td>
+              <td class="numeric">${formatRuntimeAndTurns(
+                row.started_at,
+                row.turn_count,
+                snapshot.generated_at,
+              )}</td>
+              <td>
+                <div class="detail-stack">
+                  <span class="event-text" title="${escapeHtml(
+                    row.last_message ?? row.last_event ?? "n/a",
+                  )}">${escapeHtml(
+                    row.last_message ?? row.last_event ?? "n/a",
+                  )}</span>
+                  <span class="muted event-meta">${escapeHtml(
+                    row.last_event ?? "n/a",
+                  )}${
+                    row.last_event_at === null
+                      ? ""
+                      : ` · <span class="mono numeric">${escapeHtml(
+                          row.last_event_at,
+                        )}</span>`
+                  }</span>
+                </div>
+              </td>
+              <td>
+                <div class="token-stack numeric">
+                  <span>Total: ${formatInteger(row.tokens.total_tokens)}</span>
+                  <span class="muted">In ${formatInteger(
+                    row.tokens.input_tokens,
+                  )} / Out ${formatInteger(row.tokens.output_tokens)}</span>
+                </div>
+              </td>
             </tr>`,
         )
         .join("");
@@ -833,22 +1247,107 @@ function renderRunningRows(snapshot: RuntimeSnapshot): string {
 
 function renderRetryRows(snapshot: RuntimeSnapshot): string {
   return snapshot.retrying.length === 0
-    ? '<tr><td colspan="4">No queued retries.</td></tr>'
+    ? '<tr><td colspan="4"><p class="empty-state">No issues are currently backing off.</p></td></tr>'
     : snapshot.retrying
         .map(
           (row) => `
             <tr>
-              <td>${escapeHtml(row.issue_identifier ?? row.issue_id)}</td>
+              <td>
+                <div class="issue-stack">
+                  <span class="issue-id">${escapeHtml(row.issue_identifier ?? row.issue_id)}</span>
+                  <a class="issue-link" href="/api/v1/${encodeURIComponent(
+                    row.issue_identifier ?? row.issue_id,
+                  )}">JSON details</a>
+                </div>
+              </td>
               <td>${row.attempt}</td>
-              <td>${escapeHtml(row.due_at)}</td>
-              <td>${escapeHtml(row.error ?? "-")}</td>
+              <td class="mono">${escapeHtml(row.due_at)}</td>
+              <td>${escapeHtml(row.error ?? "n/a")}</td>
             </tr>`,
         )
         .join("");
 }
 
-function escapeHtml(value: string): string {
-  return value
+function formatRuntimeAndTurns(
+  startedAt: string,
+  turnCount: number,
+  generatedAt: string,
+): string {
+  const runtime = formatRuntimeSeconds(
+    runtimeSecondsFromStartedAt(startedAt, generatedAt),
+  );
+  return Number.isInteger(turnCount) && turnCount > 0
+    ? `${runtime} / ${turnCount}`
+    : runtime;
+}
+
+function formatRuntimeSeconds(seconds: number): string {
+  if (!Number.isFinite(seconds) || seconds < 0) {
+    return "0m 0s";
+  }
+  const wholeSeconds = Math.max(0, Math.trunc(seconds));
+  const mins = Math.floor(wholeSeconds / 60);
+  const secs = wholeSeconds % 60;
+  return `${mins}m ${secs}s`;
+}
+
+function runtimeSecondsFromStartedAt(
+  startedAt: string,
+  generatedAt: string,
+): number {
+  const start = Date.parse(startedAt);
+  const generated = Date.parse(generatedAt);
+  if (
+    !Number.isFinite(start) ||
+    !Number.isFinite(generated) ||
+    generated < start
+  ) {
+    return 0;
+  }
+  return (generated - start) / 1000;
+}
+
+function formatInteger(value: number): string {
+  return Number.isFinite(value)
+    ? Math.trunc(value).toLocaleString("en-US")
+    : "n/a";
+}
+
+function prettyValue(value: unknown): string {
+  return value === null || value === undefined
+    ? "n/a"
+    : JSON.stringify(value, null, 2);
+}
+
+function stateBadgeClass(state: string): string {
+  const normalized = state.toLowerCase();
+  if (
+    normalized.includes("progress") ||
+    normalized.includes("running") ||
+    normalized.includes("active")
+  ) {
+    return "state-badge state-badge-active";
+  }
+  if (
+    normalized.includes("blocked") ||
+    normalized.includes("error") ||
+    normalized.includes("failed")
+  ) {
+    return "state-badge state-badge-danger";
+  }
+  if (
+    normalized.includes("todo") ||
+    normalized.includes("queued") ||
+    normalized.includes("pending") ||
+    normalized.includes("retry")
+  ) {
+    return "state-badge state-badge-warning";
+  }
+  return "state-badge";
+}
+
+function escapeHtml(value: string | number): string {
+  return String(value)
     .replaceAll("&", "&amp;")
     .replaceAll("<", "&lt;")
     .replaceAll(">", "&gt;")

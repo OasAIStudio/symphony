@@ -34,8 +34,13 @@ describe("dashboard server", () => {
     });
     expect(dashboard.statusCode).toBe(200);
     expect(dashboard.headers["content-type"]).toContain("text/html");
-    expect(dashboard.body).toContain("Symphony Dashboard");
+    expect(dashboard.body).toContain("Operations Dashboard");
     expect(dashboard.body).toContain("ABC-123");
+    expect(dashboard.body).toContain("Running sessions");
+    expect(dashboard.body).toContain("Runtime / turns");
+    expect(dashboard.body).toContain("Codex update");
+    expect(dashboard.body).toContain("Copy ID");
+    expect(dashboard.body).toContain("state-badge");
     expect(dashboard.body).toContain("window.__SYMPHONY_SNAPSHOT__");
     expect(dashboard.body).toContain("/api/v1/events");
 
