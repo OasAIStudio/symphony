@@ -120,6 +120,8 @@ export class OrchestratorRuntimeHost implements DashboardServerHost {
 
   private refreshQueued = false;
 
+  private readonly snapshotListeners = new Set<() => void>();
+
   constructor(options: RuntimeHostOptions) {
     this.config = options.config;
     this.tracker = options.tracker;
@@ -219,6 +221,8 @@ export class OrchestratorRuntimeHost implements DashboardServerHost {
           : { workspaceManager: this.workspaceManager }),
       });
     }
+
+    this.notifySnapshotListeners();
   }
 
   async pollOnce() {
@@ -284,6 +288,13 @@ export class OrchestratorRuntimeHost implements DashboardServerHost {
       coalesced,
       requested_at: requestedAt,
       operations: ["poll", "reconcile"],
+    };
+  }
+
+  subscribeToSnapshots(listener: () => void): () => void {
+    this.snapshotListeners.add(listener);
+    return () => {
+      this.snapshotListeners.delete(listener);
     };
   }
 
@@ -406,7 +417,19 @@ export class OrchestratorRuntimeHost implements DashboardServerHost {
       () => undefined,
       () => undefined,
     );
-    return next;
+    return next.finally(() => {
+      this.notifySnapshotListeners();
+    });
+  }
+
+  private notifySnapshotListeners(): void {
+    for (const listener of this.snapshotListeners) {
+      try {
+        listener();
+      } catch {
+        // Observability listeners must not affect runtime correctness.
+      }
+    }
   }
 
   private createManagedAgentRunner(input: {
@@ -470,6 +493,9 @@ export async function startRuntimeService(
       : await startDashboardServer({
           host: runtimeHost,
           port: currentConfig.server.port,
+          refreshMs: currentConfig.observability.refreshMs,
+          renderIntervalMs: currentConfig.observability.renderIntervalMs,
+          liveUpdatesEnabled: currentConfig.observability.dashboardEnabled,
         });
 
   const stopController = new AbortController();
@@ -552,6 +578,22 @@ export async function startRuntimeService(
                 {
                   outcome: "degraded",
                   reason: "server_port_reload_requires_restart",
+                  port: dashboard.port,
+                },
+              );
+            }
+
+            if (
+              dashboard !== null &&
+              previousConfig.observability.dashboardEnabled !==
+                nextConfig.observability.dashboardEnabled
+            ) {
+              await logger.warn(
+                "workflow_reload_observability_ignored",
+                "Ignoring observability.dashboard_enabled change until runtime restart.",
+                {
+                  outcome: "degraded",
+                  reason: "observability_reload_requires_restart",
                   port: dashboard.port,
                 },
               );

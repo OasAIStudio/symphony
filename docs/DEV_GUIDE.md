@@ -193,6 +193,9 @@ issue to "In Review" and leave a comment summarizing what you did.
 | `codex.read_timeout_ms` | Max time in ms to wait for the next Codex event before declaring stream stalled | `5000` |
 | `codex.stall_timeout_ms` | Max silent time in ms before a running agent is declared stalled and stopped | `300000` |
 | `server.port` | HTTP dashboard port; omit or `null` to disable | `null` |
+| `observability.dashboard_enabled` | Enable live dashboard updates when the HTTP server is running | `true` |
+| `observability.refresh_ms` | Dashboard heartbeat interval in ms for time-based refreshes | `1000` |
+| `observability.render_interval_ms` | Minimum spacing in ms between pushed dashboard renders | `16` |
 
 The prompt body uses **Liquid template syntax**. Available variables:
 - `{{ issue.identifier }}`, `{{ issue.title }}`, `{{ issue.description }}`
@@ -324,5 +327,6 @@ These fields take effect on the next poll tick without restarting Symphony:
 **How to watch runtime state**
 - Structured JSON logs are the primary observability surface
 - Launch with `--port 3000` to access the HTTP dashboard at `http://localhost:3000`
+- The dashboard serves an initial HTML snapshot, then stays current over `/api/v1/events`
 
 ---

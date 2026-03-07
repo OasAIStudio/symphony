@@ -13,6 +13,9 @@ import {
   DEFAULT_MAX_CONCURRENT_AGENTS,
   DEFAULT_MAX_RETRY_BACKOFF_MS,
   DEFAULT_MAX_TURNS,
+  DEFAULT_OBSERVABILITY_ENABLED,
+  DEFAULT_OBSERVABILITY_REFRESH_MS,
+  DEFAULT_OBSERVABILITY_RENDER_INTERVAL_MS,
   DEFAULT_POLL_INTERVAL_MS,
   DEFAULT_READ_TIMEOUT_MS,
   DEFAULT_STALL_TIMEOUT_MS,
@@ -51,6 +54,15 @@ describe("config-resolver", () => {
     expect(resolved.codex.turnTimeoutMs).toBe(DEFAULT_TURN_TIMEOUT_MS);
     expect(resolved.codex.readTimeoutMs).toBe(DEFAULT_READ_TIMEOUT_MS);
     expect(resolved.codex.stallTimeoutMs).toBe(DEFAULT_STALL_TIMEOUT_MS);
+    expect(resolved.observability.dashboardEnabled).toBe(
+      DEFAULT_OBSERVABILITY_ENABLED,
+    );
+    expect(resolved.observability.refreshMs).toBe(
+      DEFAULT_OBSERVABILITY_REFRESH_MS,
+    );
+    expect(resolved.observability.renderIntervalMs).toBe(
+      DEFAULT_OBSERVABILITY_RENDER_INTERVAL_MS,
+    );
   });
 
   it("coerces env-backed fields, path-like roots, and state limits", () => {
@@ -92,6 +104,11 @@ describe("config-resolver", () => {
           server: {
             port: "8080",
           },
+          observability: {
+            dashboard_enabled: "false",
+            refresh_ms: "2500",
+            render_interval_ms: "33",
+          },
         },
       },
       {
@@ -121,6 +138,9 @@ describe("config-resolver", () => {
     expect(resolved.codex.readTimeoutMs).toBe(2_500);
     expect(resolved.codex.stallTimeoutMs).toBe(-1);
     expect(resolved.server.port).toBe(8080);
+    expect(resolved.observability.dashboardEnabled).toBe(false);
+    expect(resolved.observability.refreshMs).toBe(2_500);
+    expect(resolved.observability.renderIntervalMs).toBe(33);
   });
 
   it("accepts server.port zero for ephemeral listener binding", () => {

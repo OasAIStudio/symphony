@@ -103,6 +103,8 @@ as `WORKFLOW.md`, then change these fields before starting Symphony:
 - `codex.command`
 
 If you want the dashboard, keep `server.port` in the workflow or pass `--port` on the CLI.
+The web dashboard now opens with a server-rendered snapshot and continues updating live in the
+browser over server-sent events.
 
 For a complete reference covering every supported field with defaults and inline documentation, see
 [docs/WORKFLOW.template.md](docs/WORKFLOW.template.md).

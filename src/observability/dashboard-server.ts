@@ -5,6 +5,10 @@ import {
   createServer,
 } from "node:http";
 
+import {
+  DEFAULT_OBSERVABILITY_REFRESH_MS,
+  DEFAULT_OBSERVABILITY_RENDER_INTERVAL_MS,
+} from "../config/defaults.js";
 import { ERROR_CODES } from "../errors/codes.js";
 import type { RuntimeSnapshot } from "../logging/runtime-snapshot.js";
 
@@ -73,12 +77,16 @@ export interface DashboardServerHost {
     issueIdentifier: string,
   ): IssueDetailResponse | null | Promise<IssueDetailResponse | null>;
   requestRefresh(): RefreshResponse | Promise<RefreshResponse>;
+  subscribeToSnapshots?(listener: () => void): () => void;
 }
 
 export interface DashboardServerOptions {
   host: DashboardServerHost;
   hostname?: string;
   snapshotTimeoutMs?: number;
+  refreshMs?: number;
+  renderIntervalMs?: number;
+  liveUpdatesEnabled?: boolean;
 }
 
 export interface DashboardServerInstance {
@@ -88,18 +96,172 @@ export interface DashboardServerInstance {
   close(): Promise<void>;
 }
 
+interface DashboardRenderOptions {
+  liveUpdatesEnabled: boolean;
+}
+
+class DashboardLiveUpdatesController {
+  readonly #host: DashboardServerHost;
+  readonly #snapshotTimeoutMs: number;
+  readonly #refreshMs: number;
+  readonly #renderIntervalMs: number;
+  readonly #clients = new Set<ServerResponse<IncomingMessage>>();
+  #flushTimer: NodeJS.Timeout | null = null;
+  #heartbeatTimer: NodeJS.Timeout | null = null;
+  #unsubscribeHost: (() => void) | null = null;
+  #closed = false;
+
+  constructor(options: {
+    host: DashboardServerHost;
+    snapshotTimeoutMs: number;
+    refreshMs: number;
+    renderIntervalMs: number;
+  }) {
+    this.#host = options.host;
+    this.#snapshotTimeoutMs = options.snapshotTimeoutMs;
+    this.#refreshMs = options.refreshMs;
+    this.#renderIntervalMs = options.renderIntervalMs;
+  }
+
+  start(): void {
+    if (typeof this.#host.subscribeToSnapshots === "function") {
+      this.#unsubscribeHost = this.#host.subscribeToSnapshots(() => {
+        this.scheduleBroadcast();
+      });
+    }
+  }
+
+  async close(): Promise<void> {
+    this.#closed = true;
+    this.#unsubscribeHost?.();
+    this.#unsubscribeHost = null;
+    this.clearTimers();
+
+    for (const client of this.#clients) {
+      client.end();
+    }
+    this.#clients.clear();
+  }
+
+  async handleEventsRequest(
+    request: IncomingMessage,
+    response: ServerResponse,
+  ): Promise<void> {
+    response.statusCode = 200;
+    response.setHeader("content-type", "text/event-stream; charset=utf-8");
+    response.setHeader("cache-control", "no-cache, no-transform");
+    response.setHeader("connection", "keep-alive");
+    response.setHeader("x-accel-buffering", "no");
+    response.write(`retry: ${this.#refreshMs}\n\n`);
+
+    this.#clients.add(response);
+    this.startHeartbeat();
+
+    const cleanup = () => {
+      this.#clients.delete(response);
+      if (this.#clients.size === 0) {
+        this.stopHeartbeat();
+      }
+    };
+
+    request.on("close", cleanup);
+    response.on("close", cleanup);
+
+    await this.writeSnapshot(response);
+  }
+
+  scheduleBroadcast(): void {
+    if (this.#closed || this.#clients.size === 0 || this.#flushTimer !== null) {
+      return;
+    }
+
+    this.#flushTimer = setTimeout(() => {
+      this.#flushTimer = null;
+      void this.broadcastSnapshot();
+    }, this.#renderIntervalMs);
+  }
+
+  private startHeartbeat(): void {
+    if (this.#heartbeatTimer !== null) {
+      return;
+    }
+
+    this.#heartbeatTimer = setInterval(() => {
+      this.scheduleBroadcast();
+    }, this.#refreshMs);
+  }
+
+  private stopHeartbeat(): void {
+    if (this.#heartbeatTimer === null) {
+      return;
+    }
+
+    clearInterval(this.#heartbeatTimer);
+    this.#heartbeatTimer = null;
+  }
+
+  private clearTimers(): void {
+    if (this.#flushTimer !== null) {
+      clearTimeout(this.#flushTimer);
+      this.#flushTimer = null;
+    }
+    this.stopHeartbeat();
+  }
+
+  private async broadcastSnapshot(): Promise<void> {
+    const clients = [...this.#clients];
+    if (clients.length === 0) {
+      return;
+    }
+
+    await Promise.allSettled(
+      clients.map((client) => this.writeSnapshot(client)),
+    );
+  }
+
+  private async writeSnapshot(response: ServerResponse): Promise<void> {
+    try {
+      const snapshot = await readSnapshot(this.#host, this.#snapshotTimeoutMs);
+      response.write(`event: snapshot\ndata: ${JSON.stringify(snapshot)}\n\n`);
+    } catch (error) {
+      response.write(
+        `event: error\ndata: ${JSON.stringify({
+          code: isSnapshotTimeoutError(error)
+            ? ERROR_CODES.snapshotTimedOut
+            : ERROR_CODES.snapshotUnavailable,
+          message: toErrorMessage(error),
+        })}\n\n`,
+      );
+    }
+  }
+}
+
 export function createDashboardServer(options: DashboardServerOptions): Server {
   const hostname = options.hostname ?? "127.0.0.1";
-  const handler = createDashboardRequestHandler({
+  const snapshotTimeoutMs =
+    options.snapshotTimeoutMs ?? DEFAULT_SNAPSHOT_TIMEOUT_MS;
+  const liveController = new DashboardLiveUpdatesController({
     host: options.host,
-    hostname,
-    ...(options.snapshotTimeoutMs === undefined
-      ? {}
-      : { snapshotTimeoutMs: options.snapshotTimeoutMs }),
+    snapshotTimeoutMs,
+    refreshMs: options.refreshMs ?? DEFAULT_OBSERVABILITY_REFRESH_MS,
+    renderIntervalMs:
+      options.renderIntervalMs ?? DEFAULT_OBSERVABILITY_RENDER_INTERVAL_MS,
   });
-  return createServer((request, response) => {
+  liveController.start();
+
+  const handler = createDashboardRequestHandler({
+    ...options,
+    hostname,
+    snapshotTimeoutMs,
+    liveController,
+  });
+  const server = createServer((request, response) => {
     void handler(request, response);
   });
+  server.on("close", () => {
+    void liveController.close();
+  });
+  return server;
 }
 
 export async function startDashboardServer(
@@ -143,11 +305,16 @@ export async function startDashboardServer(
 }
 
 export function createDashboardRequestHandler(
-  options: DashboardServerOptions,
+  options: DashboardServerOptions & {
+    liveController?: DashboardLiveUpdatesController;
+  },
 ): (request: IncomingMessage, response: ServerResponse) => Promise<void> {
   const hostname = options.hostname ?? "127.0.0.1";
   const snapshotTimeoutMs =
     options.snapshotTimeoutMs ?? DEFAULT_SNAPSHOT_TIMEOUT_MS;
+  const renderOptions: DashboardRenderOptions = {
+    liveUpdatesEnabled: options.liveUpdatesEnabled ?? true,
+  };
 
   return async (request, response) => {
     try {
@@ -161,7 +328,7 @@ export function createDashboardRequestHandler(
         }
 
         const snapshot = await readSnapshot(options.host, snapshotTimeoutMs);
-        writeHtml(response, 200, renderDashboardHtml(snapshot));
+        writeHtml(response, 200, renderDashboardHtml(snapshot, renderOptions));
         return;
       }
 
@@ -173,6 +340,28 @@ export function createDashboardRequestHandler(
 
         const snapshot = await readSnapshot(options.host, snapshotTimeoutMs);
         writeJson(response, 200, snapshot);
+        return;
+      }
+
+      if (url.pathname === "/api/v1/events") {
+        if (method !== "GET") {
+          writeMethodNotAllowed(response, ["GET"]);
+          return;
+        }
+
+        if (renderOptions.liveUpdatesEnabled !== true) {
+          writeNotFound(response, url.pathname);
+          return;
+        }
+
+        if (options.liveController === undefined) {
+          writeJsonError(response, 503, ERROR_CODES.snapshotUnavailable, {
+            message: "Live dashboard updates are unavailable.",
+          });
+          return;
+        }
+
+        await options.liveController.handleEventsRequest(request, response);
         return;
       }
 
@@ -332,40 +521,10 @@ function isSnapshotTimeoutError(error: unknown): boolean {
   );
 }
 
-function renderDashboardHtml(snapshot: RuntimeSnapshot): string {
-  const runningRows =
-    snapshot.running.length === 0
-      ? '<tr><td colspan="7">No active sessions.</td></tr>'
-      : snapshot.running
-          .map(
-            (row) => `
-              <tr>
-                <td>${escapeHtml(row.issue_identifier)}</td>
-                <td>${escapeHtml(row.state)}</td>
-                <td>${escapeHtml(row.session_id ?? "-")}</td>
-                <td>${row.turn_count}</td>
-                <td>${escapeHtml(row.last_event ?? "-")}</td>
-                <td>${escapeHtml(row.last_message ?? "-")}</td>
-                <td>${escapeHtml(row.last_event_at ?? "-")}</td>
-              </tr>`,
-          )
-          .join("");
-
-  const retryRows =
-    snapshot.retrying.length === 0
-      ? '<tr><td colspan="4">No queued retries.</td></tr>'
-      : snapshot.retrying
-          .map(
-            (row) => `
-              <tr>
-                <td>${escapeHtml(row.issue_identifier ?? row.issue_id)}</td>
-                <td>${row.attempt}</td>
-                <td>${escapeHtml(row.due_at)}</td>
-                <td>${escapeHtml(row.error ?? "-")}</td>
-              </tr>`,
-          )
-          .join("");
-
+function renderDashboardHtml(
+  snapshot: RuntimeSnapshot,
+  options: DashboardRenderOptions,
+): string {
   return `<!doctype html>
 <html lang="en">
   <head>
@@ -392,6 +551,32 @@ function renderDashboardHtml(snapshot: RuntimeSnapshot): string {
       }
       h1, h2 {
         margin: 0 0 12px;
+      }
+      .header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 16px;
+        margin-bottom: 16px;
+      }
+      .status {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        padding: 8px 12px;
+        border-radius: 999px;
+        background: rgba(255, 252, 247, 0.9);
+        border: 1px solid rgba(59, 44, 32, 0.12);
+        color: #5f5449;
+      }
+      .status-dot {
+        width: 10px;
+        height: 10px;
+        border-radius: 999px;
+        background: #d26c2f;
+      }
+      .status-live .status-dot {
+        background: #2f8f46;
       }
       .grid {
         display: grid;
@@ -442,33 +627,47 @@ function renderDashboardHtml(snapshot: RuntimeSnapshot): string {
   </head>
   <body>
     <main>
-      <h1>Symphony Dashboard</h1>
-      <p class="muted">Generated at ${escapeHtml(snapshot.generated_at)}</p>
+      <div class="header">
+        <div>
+          <h1>Symphony Dashboard</h1>
+          <p id="generated-at" class="muted">Generated at ${escapeHtml(snapshot.generated_at)}</p>
+        </div>
+        <div id="live-status" class="status${
+          options.liveUpdatesEnabled ? " status-live" : ""
+        }">
+          <span class="status-dot"></span>
+          <span>${
+            options.liveUpdatesEnabled
+              ? "Live updates connected"
+              : "Static snapshot"
+          }</span>
+        </div>
+      </div>
 
       <div class="grid">
         <div class="card">
           <div class="muted">Running</div>
-          <div class="metric">${snapshot.counts.running}</div>
+          <div id="metric-running" class="metric">${snapshot.counts.running}</div>
         </div>
         <div class="card">
           <div class="muted">Retrying</div>
-          <div class="metric">${snapshot.counts.retrying}</div>
+          <div id="metric-retrying" class="metric">${snapshot.counts.retrying}</div>
         </div>
         <div class="card">
           <div class="muted">Input Tokens</div>
-          <div class="metric">${snapshot.codex_totals.input_tokens}</div>
+          <div id="metric-input" class="metric">${snapshot.codex_totals.input_tokens}</div>
         </div>
         <div class="card">
           <div class="muted">Output Tokens</div>
-          <div class="metric">${snapshot.codex_totals.output_tokens}</div>
+          <div id="metric-output" class="metric">${snapshot.codex_totals.output_tokens}</div>
         </div>
         <div class="card">
           <div class="muted">Total Tokens</div>
-          <div class="metric">${snapshot.codex_totals.total_tokens}</div>
+          <div id="metric-total" class="metric">${snapshot.codex_totals.total_tokens}</div>
         </div>
         <div class="card">
           <div class="muted">Seconds Running</div>
-          <div class="metric">${snapshot.codex_totals.seconds_running.toFixed(1)}</div>
+          <div id="metric-seconds" class="metric">${snapshot.codex_totals.seconds_running.toFixed(1)}</div>
         </div>
       </div>
 
@@ -486,7 +685,7 @@ function renderDashboardHtml(snapshot: RuntimeSnapshot): string {
               <th>Last Event At</th>
             </tr>
           </thead>
-          <tbody>${runningRows}</tbody>
+          <tbody id="running-rows">${renderRunningRows(snapshot)}</tbody>
         </table>
       </section>
 
@@ -501,17 +700,151 @@ function renderDashboardHtml(snapshot: RuntimeSnapshot): string {
               <th>Error</th>
             </tr>
           </thead>
-          <tbody>${retryRows}</tbody>
+          <tbody id="retry-rows">${renderRetryRows(snapshot)}</tbody>
         </table>
       </section>
 
       <section>
         <h2>Rate Limits</h2>
-        <pre>${escapeHtml(JSON.stringify(snapshot.rate_limits, null, 2) ?? "null")}</pre>
+        <pre id="rate-limits">${escapeHtml(
+          JSON.stringify(snapshot.rate_limits, null, 2) ?? "null",
+        )}</pre>
       </section>
     </main>
+    <script>
+      window.__SYMPHONY_SNAPSHOT__ = ${JSON.stringify(snapshot)};
+      window.__SYMPHONY_LIVE_UPDATES__ = ${JSON.stringify(
+        options.liveUpdatesEnabled,
+      )};
+      (function () {
+        const snapshot = window.__SYMPHONY_SNAPSHOT__;
+        const liveUpdatesEnabled = window.__SYMPHONY_LIVE_UPDATES__ === true;
+
+        function escapeHtml(value) {
+          return String(value)
+            .replaceAll("&", "&amp;")
+            .replaceAll("<", "&lt;")
+            .replaceAll(">", "&gt;")
+            .replaceAll('"', "&quot;")
+            .replaceAll("'", "&#39;");
+        }
+
+        function renderRunningRows(next) {
+          if (!next.running || next.running.length === 0) {
+            return '<tr><td colspan="7">No active sessions.</td></tr>';
+          }
+
+          return next.running.map(function (row) {
+            return '<tr>' +
+              '<td>' + escapeHtml(row.issue_identifier) + '</td>' +
+              '<td>' + escapeHtml(row.state) + '</td>' +
+              '<td>' + escapeHtml(row.session_id || '-') + '</td>' +
+              '<td>' + row.turn_count + '</td>' +
+              '<td>' + escapeHtml(row.last_event || '-') + '</td>' +
+              '<td>' + escapeHtml(row.last_message || '-') + '</td>' +
+              '<td>' + escapeHtml(row.last_event_at || '-') + '</td>' +
+              '</tr>';
+          }).join('');
+        }
+
+        function renderRetryRows(next) {
+          if (!next.retrying || next.retrying.length === 0) {
+            return '<tr><td colspan="4">No queued retries.</td></tr>';
+          }
+
+          return next.retrying.map(function (row) {
+            return '<tr>' +
+              '<td>' + escapeHtml(row.issue_identifier || row.issue_id) + '</td>' +
+              '<td>' + row.attempt + '</td>' +
+              '<td>' + escapeHtml(row.due_at) + '</td>' +
+              '<td>' + escapeHtml(row.error || '-') + '</td>' +
+              '</tr>';
+          }).join('');
+        }
+
+        function setStatus(text, live) {
+          const element = document.getElementById('live-status');
+          if (!element) return;
+          element.className = live ? 'status status-live' : 'status';
+          const label = element.querySelector('span:last-child');
+          if (label) {
+            label.textContent = text;
+          }
+        }
+
+        function render(next) {
+          document.getElementById('generated-at').textContent = 'Generated at ' + next.generated_at;
+          document.getElementById('metric-running').textContent = String(next.counts.running);
+          document.getElementById('metric-retrying').textContent = String(next.counts.retrying);
+          document.getElementById('metric-input').textContent = String(next.codex_totals.input_tokens);
+          document.getElementById('metric-output').textContent = String(next.codex_totals.output_tokens);
+          document.getElementById('metric-total').textContent = String(next.codex_totals.total_tokens);
+          document.getElementById('metric-seconds').textContent = Number(next.codex_totals.seconds_running).toFixed(1);
+          document.getElementById('running-rows').innerHTML = renderRunningRows(next);
+          document.getElementById('retry-rows').innerHTML = renderRetryRows(next);
+          document.getElementById('rate-limits').textContent = JSON.stringify(next.rate_limits, null, 2) || 'null';
+        }
+
+        render(snapshot);
+        if (!liveUpdatesEnabled || typeof window.EventSource !== 'function') {
+          return;
+        }
+
+        const source = new window.EventSource('/api/v1/events');
+        source.addEventListener('open', function () {
+          setStatus('Live updates connected', true);
+        });
+        source.addEventListener('snapshot', function (event) {
+          try {
+            const next = JSON.parse(event.data);
+            render(next);
+            setStatus('Live updates connected', true);
+          } catch (_error) {
+            setStatus('Live updates degraded', false);
+          }
+        });
+        source.addEventListener('error', function () {
+          setStatus('Reconnecting live updates…', false);
+        });
+      })();
+    </script>
   </body>
 </html>`;
+}
+
+function renderRunningRows(snapshot: RuntimeSnapshot): string {
+  return snapshot.running.length === 0
+    ? '<tr><td colspan="7">No active sessions.</td></tr>'
+    : snapshot.running
+        .map(
+          (row) => `
+            <tr>
+              <td>${escapeHtml(row.issue_identifier)}</td>
+              <td>${escapeHtml(row.state)}</td>
+              <td>${escapeHtml(row.session_id ?? "-")}</td>
+              <td>${row.turn_count}</td>
+              <td>${escapeHtml(row.last_event ?? "-")}</td>
+              <td>${escapeHtml(row.last_message ?? "-")}</td>
+              <td>${escapeHtml(row.last_event_at ?? "-")}</td>
+            </tr>`,
+        )
+        .join("");
+}
+
+function renderRetryRows(snapshot: RuntimeSnapshot): string {
+  return snapshot.retrying.length === 0
+    ? '<tr><td colspan="4">No queued retries.</td></tr>'
+    : snapshot.retrying
+        .map(
+          (row) => `
+            <tr>
+              <td>${escapeHtml(row.issue_identifier ?? row.issue_id)}</td>
+              <td>${row.attempt}</td>
+              <td>${escapeHtml(row.due_at)}</td>
+              <td>${escapeHtml(row.error ?? "-")}</td>
+            </tr>`,
+        )
+        .join("");
 }
 
 function escapeHtml(value: string): string {

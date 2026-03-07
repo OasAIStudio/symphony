@@ -136,6 +136,23 @@ server:
   # Port to listen on. Set to a number to enable, or omit/null to disable.
   # Default: null (disabled)
   port: null
+
+# ============================================================
+# observability — Live dashboard refresh behavior (optional)
+# ============================================================
+observability:
+  # Enable live updates for the HTTP dashboard.
+  # Default: true
+  dashboard_enabled: true
+
+  # Heartbeat interval in milliseconds for live dashboard refreshes.
+  # Used to keep runtime counters current even when no orchestration state changes.
+  # Default: 1000 (1 s)
+  refresh_ms: 1000
+
+  # Minimum spacing between pushed dashboard renders in milliseconds.
+  # Default: 16 (~60 FPS upper bound)
+  render_interval_ms: 16
 ---
 
 You are implementing work for Linear issue {{ issue.identifier }}.

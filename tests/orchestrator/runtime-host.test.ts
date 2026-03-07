@@ -397,5 +397,10 @@ function createConfig(): ResolvedWorkflowConfig {
     server: {
       port: null,
     },
+    observability: {
+      dashboardEnabled: true,
+      refreshMs: 1_000,
+      renderIntervalMs: 16,
+    },
   };
 }

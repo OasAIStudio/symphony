@@ -27,6 +27,9 @@ export const DEFAULT_CODEX_COMMAND = "codex app-server";
 export const DEFAULT_TURN_TIMEOUT_MS = 3_600_000;
 export const DEFAULT_READ_TIMEOUT_MS = 5_000;
 export const DEFAULT_STALL_TIMEOUT_MS = 300_000;
+export const DEFAULT_OBSERVABILITY_ENABLED = true;
+export const DEFAULT_OBSERVABILITY_REFRESH_MS = 1_000;
+export const DEFAULT_OBSERVABILITY_RENDER_INTERVAL_MS = 16;
 
 export const DEFAULT_LINEAR_PAGE_SIZE = 50;
 export const DEFAULT_LINEAR_NETWORK_TIMEOUT_MS = 30_000;
@@ -62,5 +65,10 @@ export const SPEC_DEFAULTS = Object.freeze({
     turnTimeoutMs: DEFAULT_TURN_TIMEOUT_MS,
     readTimeoutMs: DEFAULT_READ_TIMEOUT_MS,
     stallTimeoutMs: DEFAULT_STALL_TIMEOUT_MS,
+  },
+  observability: {
+    dashboardEnabled: DEFAULT_OBSERVABILITY_ENABLED,
+    refreshMs: DEFAULT_OBSERVABILITY_REFRESH_MS,
+    renderIntervalMs: DEFAULT_OBSERVABILITY_RENDER_INTERVAL_MS,
   },
 } as const);

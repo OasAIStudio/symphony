@@ -44,6 +44,12 @@ export interface WorkflowServerConfig {
   port: number | null;
 }
 
+export interface WorkflowObservabilityConfig {
+  dashboardEnabled: boolean;
+  refreshMs: number;
+  renderIntervalMs: number;
+}
+
 export interface ResolvedWorkflowConfig {
   workflowPath: string;
   promptTemplate: string;
@@ -54,6 +60,7 @@ export interface ResolvedWorkflowConfig {
   agent: WorkflowAgentConfig;
   codex: WorkflowCodexConfig;
   server: WorkflowServerConfig;
+  observability: WorkflowObservabilityConfig;
 }
 
 export interface DispatchValidationFailure {

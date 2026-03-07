@@ -15,6 +15,9 @@ import {
   DEFAULT_MAX_CONCURRENT_AGENTS_BY_STATE,
   DEFAULT_MAX_RETRY_BACKOFF_MS,
   DEFAULT_MAX_TURNS,
+  DEFAULT_OBSERVABILITY_ENABLED,
+  DEFAULT_OBSERVABILITY_REFRESH_MS,
+  DEFAULT_OBSERVABILITY_RENDER_INTERVAL_MS,
   DEFAULT_POLL_INTERVAL_MS,
   DEFAULT_READ_TIMEOUT_MS,
   DEFAULT_STALL_TIMEOUT_MS,
@@ -42,6 +45,7 @@ export function resolveWorkflowConfig(
   const agent = asRecord(config.agent);
   const codex = asRecord(config.codex);
   const server = asRecord(config.server);
+  const observability = asRecord(config.observability);
 
   return {
     workflowPath: workflow.workflowPath,
@@ -108,6 +112,17 @@ export function resolveWorkflowConfig(
     },
     server: {
       port: readNonNegativeInteger(server.port),
+    },
+    observability: {
+      dashboardEnabled:
+        readBoolean(observability.dashboard_enabled) ??
+        DEFAULT_OBSERVABILITY_ENABLED,
+      refreshMs:
+        readPositiveInteger(observability.refresh_ms) ??
+        DEFAULT_OBSERVABILITY_REFRESH_MS,
+      renderIntervalMs:
+        readPositiveInteger(observability.render_interval_ms) ??
+        DEFAULT_OBSERVABILITY_RENDER_INTERVAL_MS,
     },
   };
 }
@@ -196,6 +211,24 @@ function readInteger(value: unknown): number | null {
 
   if (typeof value === "string" && /^-?\d+$/.test(value.trim())) {
     return Number.parseInt(value.trim(), 10);
+  }
+
+  return null;
+}
+
+function readBoolean(value: unknown): boolean | null {
+  if (typeof value === "boolean") {
+    return value;
+  }
+
+  if (typeof value === "string") {
+    const normalized = value.trim().toLowerCase();
+    if (normalized === "true") {
+      return true;
+    }
+    if (normalized === "false") {
+      return false;
+    }
   }
 
   return null;
