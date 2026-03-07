@@ -194,3 +194,9 @@ operators stay focused on the work itself instead of supervising every agent tur
 If you are extending this TypeScript implementation, keep changes aligned with the upstream product
 model in [`SPEC.upstream.md`](SPEC.upstream.md) and follow the repository workflow documented in
 [`AGENTS.md`](AGENTS.md).
+
+## License
+
+This repository is licensed under [`Apache-2.0`](LICENSE). See [`NOTICE`](NOTICE) for attribution
+information related to the upstream OpenAI Symphony project and this unofficial TypeScript
+implementation.
