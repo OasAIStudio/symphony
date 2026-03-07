@@ -36,6 +36,9 @@ describe("dashboard server", () => {
     expect(dashboard.headers["content-type"]).toContain("text/html");
     expect(dashboard.body).toContain("Symphony Dashboard");
     expect(dashboard.body).toContain("ABC-123");
+    expect(dashboard.body).toContain(
+      '<meta http-equiv="refresh" content="5" />',
+    );
 
     const state = await sendRequest(server.port, {
       method: "GET",
