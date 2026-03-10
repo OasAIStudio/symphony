@@ -1,4 +1,4 @@
-import { request as httpRequest } from "node:http";
+import { type IncomingMessage, request as httpRequest } from "node:http";
 
 import { afterEach, describe, expect, it } from "vitest";
 
@@ -34,11 +34,18 @@ describe("dashboard server", () => {
     });
     expect(dashboard.statusCode).toBe(200);
     expect(dashboard.headers["content-type"]).toContain("text/html");
-    expect(dashboard.body).toContain("Symphony Dashboard");
+    expect(dashboard.body).toContain("Operations Dashboard");
     expect(dashboard.body).toContain("ABC-123");
     expect(dashboard.body).toContain(
       '<meta http-equiv="refresh" content="5" />',
     );
+    expect(dashboard.body).toContain("Running sessions");
+    expect(dashboard.body).toContain("Runtime / turns");
+    expect(dashboard.body).toContain("Codex update");
+    expect(dashboard.body).toContain("Copy ID");
+    expect(dashboard.body).toContain("state-badge");
+    expect(dashboard.body).toContain("window.__SYMPHONY_SNAPSHOT__");
+    expect(dashboard.body).toContain("/api/v1/events");
 
     const state = await sendRequest(server.port, {
       method: "GET",
@@ -241,6 +248,56 @@ describe("dashboard server", () => {
     });
   });
 
+  it("streams snapshot updates over server-sent events", async () => {
+    let snapshot = createSnapshot();
+    let emitUpdate = () => {};
+    const server = await startDashboardServer({
+      port: 0,
+      renderIntervalMs: 5,
+      host: createHost({
+        getRuntimeSnapshot: () => snapshot,
+        subscribeToSnapshots: (listener) => {
+          emitUpdate = listener;
+          return () => {
+            emitUpdate = () => {};
+          };
+        },
+      }),
+    });
+    servers.push(server);
+
+    const stream = await openEventStream(server.port, "/api/v1/events");
+    const initial = await stream.nextEvent();
+    expect(initial.event).toBe("snapshot");
+    expect(JSON.parse(initial.data)).toMatchObject({
+      generated_at: "2026-03-06T10:00:00.000Z",
+      counts: {
+        running: 1,
+      },
+    });
+
+    snapshot = {
+      ...snapshot,
+      generated_at: "2026-03-06T10:00:02.000Z",
+      counts: {
+        running: 2,
+        retrying: 1,
+      },
+    };
+    emitUpdate();
+
+    const next = await stream.nextEvent();
+    expect(next.event).toBe("snapshot");
+    expect(JSON.parse(next.data)).toMatchObject({
+      generated_at: "2026-03-06T10:00:02.000Z",
+      counts: {
+        running: 2,
+      },
+    });
+
+    stream.close();
+  });
+
   it("returns a plain 404 for undefined routes", async () => {
     const server = await startDashboardServer({
       port: 0,
@@ -414,4 +471,92 @@ function sendRequest(
     }
     request.end();
   });
+}
+
+async function openEventStream(
+  port: number,
+  path: string,
+): Promise<{
+  close(): void;
+  nextEvent(): Promise<{ event: string; data: string }>;
+}> {
+  const eventQueue: Array<{ event: string; data: string }> = [];
+  const waitingResolvers: Array<
+    (value: { event: string; data: string }) => void
+  > = [];
+  let buffer = "";
+  let responseRef: IncomingMessage | null = null;
+
+  const request = httpRequest({
+    host: "127.0.0.1",
+    port,
+    method: "GET",
+    path,
+  });
+
+  await new Promise<void>((resolve, reject) => {
+    request.on("response", (response) => {
+      responseRef = response;
+      response.setEncoding("utf8");
+      response.on("data", (chunk) => {
+        buffer += chunk;
+
+        while (buffer.includes("\n\n")) {
+          const separatorIndex = buffer.indexOf("\n\n");
+          const rawEvent = buffer.slice(0, separatorIndex);
+          buffer = buffer.slice(separatorIndex + 2);
+          const parsed = parseServerSentEvent(rawEvent);
+          if (parsed === null) {
+            continue;
+          }
+
+          const resolver = waitingResolvers.shift();
+          if (resolver !== undefined) {
+            resolver(parsed);
+            continue;
+          }
+          eventQueue.push(parsed);
+        }
+      });
+      resolve();
+    });
+    request.on("error", reject);
+    request.end();
+  });
+
+  return {
+    close() {
+      responseRef?.destroy();
+      request.destroy();
+    },
+    async nextEvent() {
+      const queued = eventQueue.shift();
+      if (queued !== undefined) {
+        return queued;
+      }
+
+      return await new Promise((resolve) => {
+        waitingResolvers.push(resolve);
+      });
+    },
+  };
+}
+
+function parseServerSentEvent(
+  payload: string,
+): { event: string; data: string } | null {
+  const lines = payload
+    .split("\n")
+    .map((line) => line.trim())
+    .filter((line) => line !== "");
+  const eventLine = lines.find((line) => line.startsWith("event: "));
+  const dataLine = lines.find((line) => line.startsWith("data: "));
+  if (eventLine === undefined || dataLine === undefined) {
+    return null;
+  }
+
+  return {
+    event: eventLine.slice("event: ".length),
+    data: dataLine.slice("data: ".length),
+  };
 }

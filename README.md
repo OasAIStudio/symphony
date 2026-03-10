@@ -103,6 +103,26 @@ as `WORKFLOW.md`, then change these fields before starting Symphony:
 - `codex.command`
 
 If you want the dashboard, keep `server.port` in the workflow or pass `--port` on the CLI.
+The web dashboard now opens with a server-rendered snapshot and continues updating live in the
+browser over server-sent events.
+
+If your agent workflow needs access to environment variables from the launching shell, configure
+Codex to inherit them in `codex.command`, for example:
+
+```yaml
+codex:
+  command: codex --config shell_environment_policy.inherit=all app-server
+```
+
+If your agent must push branches, open PRs, or call external APIs during a turn, also configure a
+turn sandbox policy that explicitly allows network access instead of relying on a minimal
+`workspaceWrite` sandbox object.
+
+If a specific external CLI still does not see the credentials it needs in your environment, provide
+that tool's credential via environment variables before launching Symphony.
+
+For a complete reference covering every supported field with defaults and inline documentation, see
+[docs/WORKFLOW.template.md](docs/WORKFLOW.template.md).
 
 ### What You Get
 
@@ -116,14 +136,26 @@ Once Symphony is running, it will:
 
 ### Develop
 
-If you are developing Symphony itself rather than using the published CLI, you will also need `pnpm >= 10`.
+To develop Symphony itself you will need:
+
+- Node.js `>= 22`
+- pnpm `>= 10`
+- Codex CLI with `codex app-server` support
 
 ```bash
 pnpm install
 pnpm build
-pnpm test
-pnpm lint
-pnpm format
+node dist/src/cli/main.js --help   # verify the build
+```
+
+Run checks:
+
+```bash
+pnpm test           # run all tests once
+pnpm test:watch     # watch mode
+pnpm typecheck      # TypeScript type check only
+pnpm lint           # Biome lint check
+pnpm format         # Biome auto-format
 ```
 
 ### Run From Source
@@ -135,6 +167,8 @@ pnpm install
 pnpm build
 node dist/src/cli/main.js --acknowledge-high-trust-preview
 ```
+
+See [docs/DEV_GUIDE.md](docs/DEV_GUIDE.md) for a full walkthrough including Linear setup, `WORKFLOW.md` configuration, and troubleshooting.
 
 ## Roadmap
 
@@ -175,3 +209,9 @@ operators stay focused on the work itself instead of supervising every agent tur
 If you are extending this TypeScript implementation, keep changes aligned with the upstream product
 model in [`SPEC.upstream.md`](SPEC.upstream.md) and follow the repository workflow documented in
 [`AGENTS.md`](AGENTS.md).
+
+## License
+
+This repository is licensed under [`Apache-2.0`](LICENSE). See [`NOTICE`](NOTICE) for attribution
+information related to the upstream OpenAI Symphony project and this unofficial TypeScript
+implementation.

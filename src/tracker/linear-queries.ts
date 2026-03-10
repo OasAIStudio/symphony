@@ -6,9 +6,6 @@ const ISSUE_FIELDS = `
   priority
   branchName
   url
-  assignee {
-    id
-  }
   createdAt
   updatedAt
   state {

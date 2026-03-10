@@ -403,14 +403,10 @@ export class AgentRunner {
 }
 
 async function cleanupWorkspaceArtifacts(workspacePath: string): Promise<void> {
-  await Promise.all(
-    ["tmp", ".elixir_ls"].map(async (artifactName) => {
-      await rm(`${workspacePath}/${artifactName}`, {
-        force: true,
-        recursive: true,
-      });
-    }),
-  );
+  await rm(`${workspacePath}/tmp`, {
+    force: true,
+    recursive: true,
+  });
 }
 
 function createDefaultCodexClient(

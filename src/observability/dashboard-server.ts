@@ -5,8 +5,26 @@ import {
   createServer,
 } from "node:http";
 
+import {
+  DEFAULT_OBSERVABILITY_REFRESH_MS,
+  DEFAULT_OBSERVABILITY_RENDER_INTERVAL_MS,
+} from "../config/defaults.js";
 import { ERROR_CODES } from "../errors/codes.js";
 import type { RuntimeSnapshot } from "../logging/runtime-snapshot.js";
+import { toErrorMessage } from "./dashboard-format.js";
+import {
+  isSnapshotTimeoutError,
+  readRequestBody,
+  readSnapshot,
+  writeHtml,
+  writeJson,
+  writeNotFound,
+} from "./dashboard-http.js";
+import { DashboardLiveUpdatesController } from "./dashboard-live-updates.js";
+import {
+  type DashboardRenderOptions,
+  renderDashboardHtml,
+} from "./dashboard-render.js";
 
 const DEFAULT_SNAPSHOT_TIMEOUT_MS = 1_000;
 
@@ -73,12 +91,16 @@ export interface DashboardServerHost {
     issueIdentifier: string,
   ): IssueDetailResponse | null | Promise<IssueDetailResponse | null>;
   requestRefresh(): RefreshResponse | Promise<RefreshResponse>;
+  subscribeToSnapshots?(listener: () => void): () => void;
 }
 
 export interface DashboardServerOptions {
   host: DashboardServerHost;
   hostname?: string;
   snapshotTimeoutMs?: number;
+  refreshMs?: number;
+  renderIntervalMs?: number;
+  liveUpdatesEnabled?: boolean;
 }
 
 export interface DashboardServerInstance {
@@ -90,16 +112,30 @@ export interface DashboardServerInstance {
 
 export function createDashboardServer(options: DashboardServerOptions): Server {
   const hostname = options.hostname ?? "127.0.0.1";
-  const handler = createDashboardRequestHandler({
+  const snapshotTimeoutMs =
+    options.snapshotTimeoutMs ?? DEFAULT_SNAPSHOT_TIMEOUT_MS;
+  const liveController = new DashboardLiveUpdatesController({
     host: options.host,
-    hostname,
-    ...(options.snapshotTimeoutMs === undefined
-      ? {}
-      : { snapshotTimeoutMs: options.snapshotTimeoutMs }),
+    snapshotTimeoutMs,
+    refreshMs: options.refreshMs ?? DEFAULT_OBSERVABILITY_REFRESH_MS,
+    renderIntervalMs:
+      options.renderIntervalMs ?? DEFAULT_OBSERVABILITY_RENDER_INTERVAL_MS,
   });
-  return createServer((request, response) => {
+  liveController.start();
+
+  const handler = createDashboardRequestHandler({
+    ...options,
+    hostname,
+    snapshotTimeoutMs,
+    liveController,
+  });
+  const server = createServer((request, response) => {
     void handler(request, response);
   });
+  server.on("close", () => {
+    void liveController.close();
+  });
+  return server;
 }
 
 export async function startDashboardServer(
@@ -143,11 +179,16 @@ export async function startDashboardServer(
 }
 
 export function createDashboardRequestHandler(
-  options: DashboardServerOptions,
+  options: DashboardServerOptions & {
+    liveController?: DashboardLiveUpdatesController;
+  },
 ): (request: IncomingMessage, response: ServerResponse) => Promise<void> {
   const hostname = options.hostname ?? "127.0.0.1";
   const snapshotTimeoutMs =
     options.snapshotTimeoutMs ?? DEFAULT_SNAPSHOT_TIMEOUT_MS;
+  const renderOptions: DashboardRenderOptions = {
+    liveUpdatesEnabled: options.liveUpdatesEnabled ?? true,
+  };
 
   return async (request, response) => {
     try {
@@ -161,7 +202,7 @@ export function createDashboardRequestHandler(
         }
 
         const snapshot = await readSnapshot(options.host, snapshotTimeoutMs);
-        writeHtml(response, 200, renderDashboardHtml(snapshot));
+        writeHtml(response, 200, renderDashboardHtml(snapshot, renderOptions));
         return;
       }
 
@@ -173,6 +214,28 @@ export function createDashboardRequestHandler(
 
         const snapshot = await readSnapshot(options.host, snapshotTimeoutMs);
         writeJson(response, 200, snapshot);
+        return;
+      }
+
+      if (url.pathname === "/api/v1/events") {
+        if (method !== "GET") {
+          writeMethodNotAllowed(response, ["GET"]);
+          return;
+        }
+
+        if (renderOptions.liveUpdatesEnabled !== true) {
+          writeNotFound(response, url.pathname);
+          return;
+        }
+
+        if (options.liveController === undefined) {
+          writeJsonError(response, 503, ERROR_CODES.snapshotUnavailable, {
+            message: "Live dashboard updates are unavailable.",
+          });
+          return;
+        }
+
+        await options.liveController.handleEventsRequest(request, response);
         return;
       }
 
@@ -223,27 +286,6 @@ export function createDashboardRequestHandler(
       });
     }
   };
-}
-
-async function readSnapshot(
-  host: DashboardServerHost,
-  timeoutMs: number,
-): Promise<RuntimeSnapshot> {
-  return await withTimeout(host.getRuntimeSnapshot(), timeoutMs, () => {
-    return new Error(`Runtime snapshot timed out after ${timeoutMs}ms.`);
-  });
-}
-
-function writeJson(
-  response: ServerResponse,
-  statusCode: number,
-  payload: unknown,
-): void {
-  const body = JSON.stringify(payload);
-  response.statusCode = statusCode;
-  response.setHeader("content-type", "application/json; charset=utf-8");
-  response.setHeader("content-length", Buffer.byteLength(body));
-  response.end(body);
 }
 
 function writeJsonError(
