@@ -5,3 +5,5 @@ coverage/
 *.tgz
 
 .worktrees/
+
+.env.local
