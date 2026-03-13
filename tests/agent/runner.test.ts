@@ -98,6 +98,32 @@ describe("AgentRunner", () => {
     );
   });
 
+  it("keeps the workspace path stable when the issue identifier changes", async () => {
+    const root = await createRoot();
+    const tracker = createTracker({
+      refreshStates: [
+        { id: "issue-1", identifier: "RENAMED-456", state: "Done" },
+      ],
+    });
+    const runner = new AgentRunner({
+      config: createConfig(root, "unused"),
+      tracker,
+      createCodexClient: (input) =>
+        createStubCodexClient([], input, {
+          statuses: ["completed"],
+        }),
+    });
+
+    const result = await runner.run({
+      issue: ISSUE_FIXTURE,
+      attempt: null,
+    });
+
+    expect(result.issue.identifier).toBe("RENAMED-456");
+    expect(result.workspace.path).toBe(join(root, "issue-1"));
+    expect(result.runAttempt.workspacePath).toBe(join(root, "issue-1"));
+  });
+
   it("sends the rendered workflow prompt first and continuation guidance afterwards", async () => {
     const root = await createRoot();
     const prompts: string[] = [];
@@ -140,7 +166,7 @@ describe("AgentRunner", () => {
           code: ERROR_CODES.hookFailed,
           message: "before_run hook failed",
           hook: "beforeRun",
-          workspacePath: join(root, "ABC-123"),
+          workspacePath: join(root, "issue-1"),
           exitCode: 1,
         });
       }),
@@ -169,13 +195,13 @@ describe("AgentRunner", () => {
     expect(createCodexClient).not.toHaveBeenCalled();
     expect(hooks.runBestEffort).toHaveBeenCalledWith({
       name: "afterRun",
-      workspacePath: join(root, "ABC-123"),
+      workspacePath: join(root, "issue-1"),
     });
   });
 
   it("removes temporary workspace artifacts before each attempt starts", async () => {
     const root = await createRoot();
-    const workspacePath = join(root, "ABC-123");
+    const workspacePath = join(root, "issue-1");
     await mkdir(join(workspacePath, "tmp"), { recursive: true });
 
     const hooks = {
@@ -263,7 +289,7 @@ describe("AgentRunner", () => {
     expect(close).toHaveBeenCalledTimes(1);
     expect(hooks.runBestEffort).toHaveBeenCalledWith({
       name: "afterRun",
-      workspacePath: expect.stringContaining("ABC-123"),
+      workspacePath: expect.stringContaining("issue-1"),
     });
   });
 

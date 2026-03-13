@@ -179,7 +179,7 @@ export class AgentRunner {
         liveSession,
       });
 
-      workspace = await this.workspaceManager.createForIssue(issue.identifier);
+      workspace = await this.workspaceManager.createForIssue(issue.id);
       runAttempt.workspacePath = validateWorkspaceCwd({
         cwd: workspace.path,
         workspacePath: workspace.path,

@@ -35,13 +35,13 @@ export class WorkspaceManager {
     this.#hooks = isHookRunner(options.hooks) ? options.hooks : null;
   }
 
-  resolveForIssue(issueIdentifier: string): WorkspacePathInfo {
-    return resolveWorkspacePath(this.root, issueIdentifier);
+  resolveForIssue(issueId: string): WorkspacePathInfo {
+    return resolveWorkspacePath(this.root, issueId);
   }
 
-  async createForIssue(issueIdentifier: string): Promise<Workspace> {
+  async createForIssue(issueId: string): Promise<Workspace> {
     const { workspaceKey, workspacePath, workspaceRoot } =
-      this.resolveForIssue(issueIdentifier);
+      this.resolveForIssue(issueId);
 
     try {
       await this.#fs.mkdir(workspaceRoot, { recursive: true });
@@ -67,14 +67,14 @@ export class WorkspaceManager {
 
       throw new WorkspacePathError(
         ERROR_CODES.workspaceCreateFailed,
-        `Failed to prepare workspace for ${issueIdentifier}`,
+        `Failed to prepare workspace for ${issueId}`,
         { cause: error },
       );
     }
   }
 
-  async removeForIssue(issueIdentifier: string): Promise<boolean> {
-    const { workspacePath } = this.resolveForIssue(issueIdentifier);
+  async removeForIssue(issueId: string): Promise<boolean> {
+    const { workspacePath } = this.resolveForIssue(issueId);
 
     try {
       const existsAsDirectory = await this.#workspaceExists(workspacePath);
@@ -90,7 +90,7 @@ export class WorkspaceManager {
     } catch (error) {
       throw new WorkspacePathError(
         ERROR_CODES.workspaceCleanupFailed,
-        `Failed to remove workspace for ${issueIdentifier}`,
+        `Failed to remove workspace for ${issueId}`,
         { cause: error },
       );
     }

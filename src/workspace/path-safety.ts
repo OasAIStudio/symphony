@@ -21,8 +21,8 @@ export class WorkspacePathError extends Error {
   }
 }
 
-export function sanitizeWorkspaceKey(issueIdentifier: string): string {
-  return toWorkspaceKey(issueIdentifier);
+export function sanitizeWorkspaceKey(issueKeySource: string): string {
+  return toWorkspaceKey(issueKeySource);
 }
 
 export function isWorkspaceKeySafe(workspaceKey: string): boolean {
@@ -37,10 +37,10 @@ export function resolveWorkspaceRoot(workspaceRoot: string): string {
 
 export function resolveWorkspacePath(
   workspaceRoot: string,
-  issueIdentifier: string,
+  issueKeySource: string,
 ): WorkspacePathInfo {
   const normalizedRoot = resolveWorkspaceRoot(workspaceRoot);
-  const workspaceKey = sanitizeWorkspaceKey(issueIdentifier);
+  const workspaceKey = sanitizeWorkspaceKey(issueKeySource);
 
   assertWorkspaceKeySafe(workspaceKey);
 

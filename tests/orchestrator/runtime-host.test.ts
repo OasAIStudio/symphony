@@ -80,15 +80,15 @@ describe("OrchestratorRuntimeHost", () => {
     fakeRunner.resolve("1", {
       issue: createIssue({ state: "In Progress" }),
       workspace: {
-        path: "/tmp/workspaces/ISSUE-1",
-        workspaceKey: "ISSUE-1",
+        path: "/tmp/workspaces/1",
+        workspaceKey: "1",
         createdNow: true,
       },
       runAttempt: {
         issueId: "1",
         issueIdentifier: "ISSUE-1",
         attempt: null,
-        workspacePath: "/tmp/workspaces/ISSUE-1",
+        workspacePath: "/tmp/workspaces/1",
         startedAt: "2026-03-06T00:00:00.000Z",
         status: "succeeded",
       },
@@ -200,6 +200,35 @@ describe("OrchestratorRuntimeHost", () => {
     expect(tracker.fetchCandidateIssues).toHaveBeenCalledTimes(1);
   });
 
+  it("resolves running workspace details from issue id after identifier changes", async () => {
+    const tracker = createTracker();
+    const fakeRunner = new FakeAgentRunner();
+    const host = new OrchestratorRuntimeHost({
+      config: createConfig(),
+      tracker,
+      createAgentRunner: ({ onEvent }) => {
+        fakeRunner.onEvent = onEvent;
+        return fakeRunner;
+      },
+      now: () => new Date("2026-03-06T00:00:05.000Z"),
+    });
+
+    await host.pollOnce();
+    tracker.setStateSnapshots([
+      { id: "1", identifier: "RENAMED-2", state: "In Progress" },
+    ]);
+    await host.pollOnce();
+
+    const details = await host.getIssueDetails("RENAMED-2");
+
+    expect(details).toMatchObject({
+      issue_identifier: "RENAMED-2",
+      workspace: {
+        path: "/tmp/workspaces/1",
+      },
+    });
+  });
+
   it("emits issue and session context for agent lifecycle logs", async () => {
     const tracker = createTracker();
     const fakeRunner = new FakeAgentRunner();
@@ -297,7 +326,7 @@ class FakeAgentRunner {
       issueId,
       issueIdentifier: "ISSUE-1",
       attempt: null,
-      workspacePath: "/tmp/workspaces/ISSUE-1",
+      workspacePath: "/tmp/workspaces/1",
       turnCount: event.turnCount ?? 0,
     });
   }

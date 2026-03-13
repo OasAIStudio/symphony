@@ -12,9 +12,9 @@ import {
 } from "../../src/workspace/path-safety.js";
 
 describe("workspace path safety", () => {
-  it("sanitizes issue identifiers into deterministic workspace keys", () => {
-    expect(sanitizeWorkspaceKey("ABC-123/needs review")).toBe(
-      "ABC-123_needs_review",
+  it("sanitizes issue ids into deterministic workspace keys", () => {
+    expect(sanitizeWorkspaceKey("issue/123:needs review")).toBe(
+      "issue_123_needs_review",
     );
     expect(sanitizeWorkspaceKey("你好 world")).toBe("___world");
   });
@@ -22,12 +22,12 @@ describe("workspace path safety", () => {
   it("builds an absolute workspace path under the configured root", () => {
     const info = resolveWorkspacePath(
       "./tmp/workspaces",
-      "ABC-123/needs review",
+      "issue/123:needs review",
     );
 
-    expect(info.workspaceKey).toBe("ABC-123_needs_review");
+    expect(info.workspaceKey).toBe("issue_123_needs_review");
     expect(info.workspacePath).toBe(
-      join(info.workspaceRoot, "ABC-123_needs_review"),
+      join(info.workspaceRoot, "issue_123_needs_review"),
     );
   });
 
