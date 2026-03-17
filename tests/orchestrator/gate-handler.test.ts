@@ -13,6 +13,7 @@ import {
   type EnsembleGateResult,
   type PostComment,
   type ReviewerResult,
+  RATE_LIMIT_PATTERNS,
   aggregateVerdicts,
   formatGateComment,
   parseReviewerOutput,
@@ -128,6 +129,28 @@ describe("parseReviewerOutput", () => {
     expect(result.verdict.role).toBe("adversarial-reviewer");
     expect(result.verdict.model).toBe("gpt-5.3-codex");
     expect(result.verdict.verdict).toBe("pass");
+  });
+
+  it("returns error verdict when output contains rate-limit text", () => {
+    const raw = "You have exhausted your capacity on this model. Please try again later.";
+    const result = parseReviewerOutput(reviewer, raw);
+    expect(result.verdict.verdict).toBe("error");
+    expect(result.verdict.role).toBe("adversarial-reviewer");
+    expect(result.verdict.model).toBe("gpt-5.3-codex");
+    expect(result.feedback).toContain("exhausted your capacity");
+  });
+
+  it("returns error verdict for quota exceeded text (case-insensitive)", () => {
+    const raw = "Error: Quota Exceeded for this billing period.";
+    const result = parseReviewerOutput(reviewer, raw);
+    expect(result.verdict.verdict).toBe("error");
+  });
+
+  it("still returns fail for genuine non-JSON review without rate-limit text", () => {
+    const raw = "This code has serious issues but I cannot format my response as JSON.";
+    const result = parseReviewerOutput(reviewer, raw);
+    expect(result.verdict.verdict).toBe("fail");
+    expect(result.feedback).toBe(raw);
   });
 });
 
@@ -489,6 +512,70 @@ describe("ensemble gate orchestrator integration", () => {
     });
 
     expect(orchestrator.getState().issueReworkCounts["1"]).toBe(1);
+  });
+
+  it("posts escalation comment when rework max exceeded", async () => {
+    const { OrchestratorCore } = await import(
+      "../../src/orchestrator/core.js"
+    );
+
+    const postedComments: Array<{ issueId: string; body: string }> = [];
+    const orchestrator = new OrchestratorCore({
+      config: createConfig({
+        stages: createEnsembleWorkflowConfig(),
+      }),
+      tracker: createTracker(),
+      spawnWorker: async () => ({
+        workerHandle: { pid: 1 },
+        monitorHandle: { ref: "m" },
+      }),
+      runEnsembleGate: async () => ({
+        aggregate: "fail" as const,
+        results: [],
+        comment: "Review failed",
+      }),
+      postComment: async (issueId, body) => {
+        postedComments.push({ issueId, body });
+      },
+      now: () => new Date("2026-03-06T00:00:05.000Z"),
+    });
+
+    // Dispatch → implement stage
+    await orchestrator.pollTick();
+    expect(orchestrator.getState().issueStages["1"]).toBe("implement");
+
+    // Exhaust max_rework (3) by cycling through rework loops
+    for (let i = 0; i < 3; i++) {
+      orchestrator.onWorkerExit({ issueId: "1", outcome: "normal" });
+      expect(orchestrator.getState().issueStages["1"]).toBe("review");
+
+      await orchestrator.onRetryTimer("1");
+
+      // Wait for gate to rework back to implement
+      await vi.waitFor(() => {
+        expect(orchestrator.getState().issueStages["1"]).toBe("implement");
+      });
+
+      // Retry to re-dispatch the implement stage
+      await orchestrator.onRetryTimer("1");
+    }
+
+    // 4th cycle — this should trigger escalation
+    orchestrator.onWorkerExit({ issueId: "1", outcome: "normal" });
+    expect(orchestrator.getState().issueStages["1"]).toBe("review");
+
+    await orchestrator.onRetryTimer("1");
+
+    // Wait for escalation
+    await vi.waitFor(() => {
+      expect(orchestrator.getState().issueStages["1"]).toBeUndefined();
+    });
+
+    expect(orchestrator.getState().completed.has("1")).toBe(true);
+    expect(postedComments).toHaveLength(1);
+    expect(postedComments[0]!.issueId).toBe("1");
+    expect(postedComments[0]!.body).toContain("max rework attempts (3) exceeded");
+    expect(postedComments[0]!.body).toContain("Escalating for manual review");
   });
 
   it("human gate leaves issue in gate state without running handler", async () => {

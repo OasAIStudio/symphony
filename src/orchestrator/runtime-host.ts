@@ -165,6 +165,13 @@ export class OrchestratorRuntimeHost implements DashboardServerHost {
       tracker: options.tracker,
       now: this.now,
       timerScheduler,
+      ...(this.tracker instanceof LinearTrackerClient
+        ? {
+            postComment: async (issueId: string, body: string) => {
+              await (this.tracker as LinearTrackerClient).postComment(issueId, body);
+            },
+          }
+        : {}),
       spawnWorker: async ({ issue, attempt, stage, stageName }) =>
         this.spawnWorkerExecution(issue, attempt, stage, stageName),
       stopRunningIssue: async (input) => {

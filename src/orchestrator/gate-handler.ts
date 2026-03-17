@@ -6,6 +6,18 @@ import type { ReviewerDefinition, StageDefinition } from "../config/types.js";
 import type { Issue } from "../domain/model.js";
 
 /**
+ * Known rate-limit / quota-exhaustion phrases that may appear in reviewer
+ * output when the model returns a 200 with an error body instead of throwing.
+ * Checked case-insensitively against raw output in parseReviewerOutput.
+ */
+export const RATE_LIMIT_PATTERNS: readonly string[] = [
+  "you have exhausted your capacity",
+  "resource has been exhausted",
+  "rate limit",
+  "quota exceeded",
+];
+
+/**
  * Single reviewer verdict — the minimal JSON layer of the two-layer output.
  * "error" means the reviewer failed to execute (rate limit, network, etc.)
  * and should not count as a code review failure.
@@ -289,6 +301,21 @@ export function parseReviewerOutput(
   // Try to find a JSON verdict in the output
   const verdictMatch = raw.match(/\{[^}]*"verdict"\s*:\s*"(?:pass|fail)"[^}]*\}/);
   if (verdictMatch === null) {
+    // Check for rate-limit text before defaulting to "fail"
+    const lower = raw.toLowerCase();
+    const isRateLimited = RATE_LIMIT_PATTERNS.some((p) => lower.includes(p));
+    if (isRateLimited) {
+      return {
+        reviewer,
+        verdict: {
+          role: reviewer.role,
+          model: reviewer.model ?? "unknown",
+          verdict: "error",
+        },
+        feedback: raw.trim(),
+        raw,
+      };
+    }
     return {
       reviewer,
       verdict: defaultVerdict,
