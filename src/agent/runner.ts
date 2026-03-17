@@ -302,7 +302,7 @@ export class AgentRunner {
         });
 
         // Early exit: agent signaled stage completion
-        if (lastTurn.message !== null && lastTurn.message.includes("[STAGE_COMPLETE]")) {
+        if (lastTurn.message !== null && lastTurn.message.trimEnd().endsWith("[STAGE_COMPLETE]")) {
           break;
         }
 
