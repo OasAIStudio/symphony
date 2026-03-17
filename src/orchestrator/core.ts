@@ -446,8 +446,9 @@ export class OrchestratorCore {
               issue.id,
               `Ensemble review: max rework attempts (${maxRework}) exceeded. Escalating for manual review.`,
             );
-          } catch {
-            // Comment posting is best-effort — don't fail on it.
+          } catch (err) {
+            // Comment posting is best-effort — don't fail the gate on it.
+            console.warn(`[orchestrator] Failed to post escalation comment for ${issue.identifier}:`, err);
           }
         }
       }
