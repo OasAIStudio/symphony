@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
 import type { CodexClientEvent } from "../../src/codex/app-server-client.js";
-import { ClaudeCodeRunner } from "../../src/runners/claude-code-runner.js";
+import { ClaudeCodeRunner, resolveClaudeModelId } from "../../src/runners/claude-code-runner.js";
 
 // Mock the AI SDK generateText
 vi.mock("ai", () => ({
@@ -60,10 +60,12 @@ describe("ClaudeCodeRunner", () => {
     });
 
     expect(mockClaudeCode).toHaveBeenCalledWith("opus", { cwd: "/tmp/workspace" });
-    expect(mockGenerateText).toHaveBeenCalledWith({
-      model: "mock-claude-model",
-      prompt: "Fix the bug",
-    });
+    expect(mockGenerateText).toHaveBeenCalledWith(
+      expect.objectContaining({
+        model: "mock-claude-model",
+        prompt: "Fix the bug",
+      }),
+    );
     expect(result.status).toBe("completed");
     expect(result.message).toBe("Hello from Claude");
     expect(result.usage).toEqual({
@@ -204,5 +206,128 @@ describe("ClaudeCodeRunner", () => {
       outputTokens: 0,
       totalTokens: 0,
     });
+  });
+
+  it("maps full Anthropic model IDs to short provider names", async () => {
+    mockGenerateText.mockResolvedValueOnce({
+      text: "ok",
+      usage: {
+        inputTokens: 10,
+        outputTokens: 5,
+        totalTokens: 15,
+        inputTokenDetails: {
+          noCacheTokens: undefined,
+          cacheReadTokens: undefined,
+          cacheWriteTokens: undefined,
+        },
+        outputTokenDetails: {
+          textTokens: undefined,
+          reasoningTokens: undefined,
+        },
+      },
+    } as never);
+
+    const runner = new ClaudeCodeRunner({
+      cwd: "/tmp/workspace",
+      model: "claude-sonnet-4-5",
+    });
+
+    await runner.startSession({ prompt: "test", title: "test" });
+
+    // Should resolve "claude-sonnet-4-5" → "sonnet"
+    expect(mockClaudeCode).toHaveBeenCalledWith("sonnet", { cwd: "/tmp/workspace" });
+  });
+
+  it("passes abortSignal to generateText for subprocess cleanup", async () => {
+    mockGenerateText.mockResolvedValueOnce({
+      text: "ok",
+      usage: {
+        inputTokens: 10,
+        outputTokens: 5,
+        totalTokens: 15,
+        inputTokenDetails: {
+          noCacheTokens: undefined,
+          cacheReadTokens: undefined,
+          cacheWriteTokens: undefined,
+        },
+        outputTokenDetails: {
+          textTokens: undefined,
+          reasoningTokens: undefined,
+        },
+      },
+    } as never);
+
+    const runner = new ClaudeCodeRunner({
+      cwd: "/tmp/workspace",
+      model: "sonnet",
+    });
+
+    await runner.startSession({ prompt: "test", title: "test" });
+
+    const callArgs = mockGenerateText.mock.calls[0]![0]!;
+    expect(callArgs).toHaveProperty("abortSignal");
+    expect(callArgs.abortSignal).toBeInstanceOf(AbortSignal);
+  });
+
+  it("aborts in-flight turn when close() is called", async () => {
+    // Create a controllable promise to simulate a long-running turn
+    let rejectFn: (reason: unknown) => void;
+    mockGenerateText.mockReturnValueOnce(
+      new Promise((_resolve, reject) => {
+        rejectFn = reject;
+      }) as never,
+    );
+
+    const runner = new ClaudeCodeRunner({
+      cwd: "/tmp/workspace",
+      model: "sonnet",
+    });
+
+    // Start a turn but don't await — the async function runs synchronously
+    // up to the first await (generateText), setting activeTurnController
+    const turnPromise = runner.startSession({ prompt: "long task", title: "test" });
+
+    // The activeTurnController should be set synchronously before the await
+    // Access the private field to get the controller directly
+    const controller = (runner as unknown as { activeTurnController: AbortController | null }).activeTurnController;
+    expect(controller).not.toBeNull();
+    expect(controller!.signal.aborted).toBe(false);
+
+    // Close the runner — should abort the in-flight controller
+    await runner.close();
+    expect(controller!.signal.aborted).toBe(true);
+
+    // Reject the mock so the turn settles
+    rejectFn!(new Error("aborted"));
+    const result = await turnPromise;
+    expect(result.status).toBe("failed");
+  });
+});
+
+describe("resolveClaudeModelId", () => {
+  it("maps claude-opus-4 to opus", () => {
+    expect(resolveClaudeModelId("claude-opus-4")).toBe("opus");
+  });
+
+  it("maps claude-opus-4-6 to opus", () => {
+    expect(resolveClaudeModelId("claude-opus-4-6")).toBe("opus");
+  });
+
+  it("maps claude-sonnet-4-5 to sonnet", () => {
+    expect(resolveClaudeModelId("claude-sonnet-4-5")).toBe("sonnet");
+  });
+
+  it("maps claude-haiku-4-5 to haiku", () => {
+    expect(resolveClaudeModelId("claude-haiku-4-5")).toBe("haiku");
+  });
+
+  it("passes through already-short names unchanged", () => {
+    expect(resolveClaudeModelId("opus")).toBe("opus");
+    expect(resolveClaudeModelId("sonnet")).toBe("sonnet");
+    expect(resolveClaudeModelId("haiku")).toBe("haiku");
+  });
+
+  it("passes through unknown model names unchanged", () => {
+    expect(resolveClaudeModelId("custom-model")).toBe("custom-model");
   });
 });

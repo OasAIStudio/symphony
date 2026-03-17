@@ -4,6 +4,21 @@ import { claudeCode } from "ai-sdk-provider-claude-code";
 import type { CodexClientEvent, CodexTurnResult } from "../codex/app-server-client.js";
 import type { AgentRunnerCodexClient } from "../agent/runner.js";
 
+// ai-sdk-provider-claude-code uses short model names, not full Anthropic IDs.
+// Map standard names to provider-expected short names.
+const MODEL_ID_MAP: Record<string, string> = {
+  "claude-opus-4": "opus",
+  "claude-opus-4-6": "opus",
+  "claude-sonnet-4": "sonnet",
+  "claude-sonnet-4-5": "sonnet",
+  "claude-haiku-4": "haiku",
+  "claude-haiku-4-5": "haiku",
+};
+
+export function resolveClaudeModelId(model: string): string {
+  return MODEL_ID_MAP[model] ?? model;
+}
+
 export interface ClaudeCodeRunnerOptions {
   cwd: string;
   model: string;
@@ -15,6 +30,9 @@ export class ClaudeCodeRunner implements AgentRunnerCodexClient {
   private sessionId: string;
   private turnCount = 0;
   private closed = false;
+  // AbortController for the in-flight generateText call.
+  // claude-code provider keeps a subprocess alive — aborting ensures cleanup.
+  private activeTurnController: AbortController | null = null;
 
   constructor(options: ClaudeCodeRunnerOptions) {
     this.options = options;
@@ -37,6 +55,9 @@ export class ClaudeCodeRunner implements AgentRunnerCodexClient {
 
   async close(): Promise<void> {
     this.closed = true;
+    // Abort any in-flight turn so the claude-code subprocess is killed
+    this.activeTurnController?.abort();
+    this.activeTurnController = null;
   }
 
   private async executeTurn(
@@ -55,12 +76,17 @@ export class ClaudeCodeRunner implements AgentRunnerCodexClient {
       turnId,
     });
 
+    const controller = new AbortController();
+    this.activeTurnController = controller;
+
     try {
+      const resolvedModel = resolveClaudeModelId(this.options.model);
       const result = await generateText({
-        model: claudeCode(this.options.model, {
+        model: claudeCode(resolvedModel, {
           cwd: this.options.cwd,
         }),
         prompt,
+        abortSignal: controller.signal,
       });
 
       const usage = {
@@ -108,6 +134,11 @@ export class ClaudeCodeRunner implements AgentRunnerCodexClient {
         rateLimits: null,
         message,
       };
+    } finally {
+      // Clear the controller ref so close() doesn't abort a completed turn
+      if (this.activeTurnController === controller) {
+        this.activeTurnController = null;
+      }
     }
   }
 

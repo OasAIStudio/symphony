@@ -1,5 +1,4 @@
-import { generateText } from "ai";
-import { createGeminiProvider } from "ai-sdk-provider-gemini-cli";
+import { generateText, type LanguageModel } from "ai";
 
 import type { CodexClientEvent, CodexTurnResult } from "../codex/app-server-client.js";
 import type { AgentRunnerCodexClient } from "../agent/runner.js";
@@ -10,16 +9,26 @@ export interface GeminiRunnerOptions {
   onEvent?: (event: CodexClientEvent) => void;
 }
 
+// Lazy-loaded provider — ai-sdk-provider-gemini-cli is ESM-only,
+// require() returns an empty module. Dynamic import() is safe in all contexts.
+let cachedProvider: ((model: string) => LanguageModel) | null = null;
+
+async function getGeminiProvider(): Promise<(model: string) => LanguageModel> {
+  if (cachedProvider) return cachedProvider;
+  const { createGeminiProvider } = await import("ai-sdk-provider-gemini-cli");
+  const provider = createGeminiProvider();
+  cachedProvider = provider as (model: string) => LanguageModel;
+  return cachedProvider;
+}
+
 export class GeminiRunner implements AgentRunnerCodexClient {
   private readonly options: GeminiRunnerOptions;
-  private readonly provider: ReturnType<typeof createGeminiProvider>;
   private sessionId: string;
   private turnCount = 0;
   private closed = false;
 
   constructor(options: GeminiRunnerOptions) {
     this.options = options;
-    this.provider = createGeminiProvider();
     this.sessionId = `gemini-${Date.now()}`;
   }
 
@@ -58,8 +67,9 @@ export class GeminiRunner implements AgentRunnerCodexClient {
     });
 
     try {
+      const provider = await getGeminiProvider();
       const result = await generateText({
-        model: this.provider(this.options.model),
+        model: provider(this.options.model),
         prompt,
       });
 

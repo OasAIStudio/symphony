@@ -52,6 +52,9 @@
     "vitest": "^3.0.8"
   },
   "dependencies": {
+    "@ai-sdk/provider": "^3.0.8",
+    "@google/gemini-cli-core": "^0.33.2",
+    "@google/genai": "^1.45.0",
     "ai": "^6.0.116",
     "ai-sdk-provider-claude-code": "^3.4.4",
     "ai-sdk-provider-gemini-cli": "^2.0.1",
