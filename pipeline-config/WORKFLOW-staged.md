@@ -156,7 +156,44 @@ You are in the INVESTIGATE stage. Your job is to analyze the issue and create an
 - Identify which files need to change and what the approach should be
 - Post a comment on the Linear issue (via `gh`) with your investigation findings and proposed implementation plan
 - Do NOT implement code, create branches, or open PRs in this stage — investigation only
-- When you have completed your investigation and posted your findings, output the exact text `[STAGE_COMPLETE]` as the very last line of your final message.
+
+### Workpad (investigate)
+After completing your investigation, create the workpad comment on this Linear issue.
+**Preferred**: Write the workpad content to a local `workpad.md` file and call `sync_workpad` with `issue_id` and `file_path`. Save the returned `comment_id` for future updates.
+**Fallback** (if `sync_workpad` is unavailable):
+1. First, search for an existing workpad comment using `linear_graphql`:
+   ```graphql
+   query { issue(id: "{{ issue.id }}") { comments { nodes { id body } } } }
+   ```
+   Look for a comment whose body starts with `## Workpad`.
+2. If no workpad comment exists, create one using `commentCreate`. If one exists, update it using `commentUpdate`.
+3. Use this template for the workpad body:
+   ```
+   ## Workpad
+   **Environment**: <hostname>:<workspace-path>@<git-short-sha>
+
+   ### Plan
+   - [ ] Step 1 derived from issue description
+   - [ ] Step 2 ...
+     - [ ] Substep if needed
+
+   ### Acceptance Criteria
+   - [ ] Criterion from issue requirements
+   - [ ] ...
+
+   ### Validation
+   - `<test command from spec>`
+   - `<any verify commands>`
+
+   ### Notes
+   - <timestamp> Investigation complete. Plan posted.
+
+   ### Confusions
+   (Only add this section if something in the issue was genuinely unclear.)
+   ```
+4. Fill the Plan and Acceptance Criteria sections from your investigation findings.
+
+- When you have completed your investigation and posted the workpad, output the exact text `[STAGE_COMPLETE]` as the very last line of your final message.
 {% endif %}
 
 {% if stageName == "implement" %}
@@ -173,7 +210,29 @@ You are in the IMPLEMENT stage. An investigation was done in the previous stage 
 6. Commit your changes with message format: `feat({{ issue.identifier }}): <description>`.
 7. Open a PR via `gh pr create` with the issue description in the PR body.
 8. Link the PR to the Linear issue by including `{{ issue.identifier }}` in the PR title or body.
-9. When you have opened the PR and all verify commands pass, output the exact text `[STAGE_COMPLETE]` as the very last line of your final message.
+
+### Workpad (implement)
+Update the workpad comment at these milestones during implementation.
+**Preferred**: Edit your local `workpad.md` file and call `sync_workpad` with `issue_id`, `file_path`, and `comment_id` (from the investigate stage).
+**Fallback** (if `sync_workpad` is unavailable):
+1. Search for the existing workpad comment (body starts with `## Workpad`) using `linear_graphql`:
+   ```graphql
+   query { issue(id: "{{ issue.id }}") { comments { nodes { id body } } } }
+   ```
+2. Update it using `commentUpdate` with the comment's `id`.
+3. At each milestone, update the relevant sections:
+   - **After starting implementation**: Check off Plan items as you complete them.
+   - **After implementation is done**: Add a Notes entry (e.g., `- <timestamp> Implementation complete. PR #<number> opened.`), update Validation with actual commands run.
+   - **After all tests pass**: Check off Acceptance Criteria items, add a Notes entry confirming validation.
+4. Do NOT update the workpad after every small code change — only at the milestones above.
+5. If no workpad comment exists (e.g., investigation stage was skipped), create one using the template from the investigate stage instructions.
+
+9. **If your changes are app-touching** (UI, API responses visible to users, frontend assets), capture a screenshot after validation passes and embed it in the workpad:
+   - Take a screenshot (e.g., `npx playwright screenshot` or `curl` the endpoint and save the response).
+   - Upload it using the fileUpload flow described in the **Media in Workpads** section.
+   - Add the image to the workpad comment under Notes: `![screenshot after validation](assetUrl)`.
+   - Skip this step for non-visual changes (library code, configs, internal refactors).
+10. When you have opened the PR and all verify commands pass, output the exact text `[STAGE_COMPLETE]` as the very last line of your final message.
 {% endif %}
 
 {% if stageName == "merge" %}
@@ -182,6 +241,19 @@ You are in the MERGE stage. The PR has been reviewed and approved.
 - Merge the PR via `gh pr merge --squash --delete-branch`
 - Verify the merge succeeded on the main branch
 - Do NOT modify code in this stage
+
+### Workpad (merge)
+After merging the PR, update the workpad comment one final time.
+**Preferred**: Edit your local `workpad.md` file and call `sync_workpad` with `issue_id`, `file_path`, and `comment_id`.
+**Fallback** (if `sync_workpad` is unavailable):
+1. Search for the existing workpad comment (body starts with `## Workpad`) using `linear_graphql`:
+   ```graphql
+   query { issue(id: "{{ issue.id }}") { comments { nodes { id body } } } }
+   ```
+2. Update it using `commentUpdate`:
+   - Check off all remaining Plan and Acceptance Criteria items.
+   - Add a final Notes entry: `- <timestamp> PR merged. Issue complete.`
+
 - When you have successfully merged the PR, output the exact text `[STAGE_COMPLETE]` as the very last line of your final message.
 {% endif %}
 
@@ -189,6 +261,48 @@ You are in the MERGE stage. The PR has been reviewed and approved.
 
 - If your task requires a capability that doesn't exist in the codebase and isn't specified in the spec, stop and comment what's missing on the issue. Don't scaffold unspecced infrastructure.
 - Tests must be runnable against $BASE_URL (no localhost assumptions in committed tests).
+
+## Workpad Rules
+
+You maintain a single persistent `## Workpad` comment on the Linear issue. This is your structured progress document.
+
+**Critical rules:**
+- **Never create multiple workpad comments.** Always search for an existing comment with `## Workpad` in its body before creating a new one.
+- **Update at milestones only** — plan finalized, implementation done, validation complete. Do NOT sync after every minor change.
+- **Prefer `sync_workpad` over raw GraphQL.** Write your workpad content to a local `workpad.md` file, then call `sync_workpad` with `issue_id`, `file_path`, and optionally `comment_id` (returned from the first sync). This keeps the workpad body out of your conversation context and saves tokens. Fall back to `linear_graphql` only if `sync_workpad` is unavailable.
+- **`linear_graphql` fallback patterns** (use only if `sync_workpad` is unavailable):
+  - Search comments: `query { issue(id: "<issue_id>") { comments { nodes { id body } } } }`
+  - Create comment: `mutation { commentCreate(input: { issueId: "<issue_id>", body: "<markdown>" }) { comment { id } } }`
+  - Update comment: `mutation { commentUpdate(id: "<comment_id>", input: { body: "<markdown>" }) { comment { id } } }`
+- **Never use `__type` or `__schema` introspection queries** against the Linear API. Use the exact patterns above.
+
+## Media in Workpads (fileUpload)
+
+When you capture evidence (screenshots, recordings, logs) during implementation, embed them in the workpad using Linear's `fileUpload` API. This is a 3-step flow:
+
+**Step 1: Get upload URL** via `linear_graphql`:
+```graphql
+mutation($filename: String!, $contentType: String!, $size: Int!) {
+  fileUpload(filename: $filename, contentType: $contentType, size: $size, makePublic: true) {
+    success
+    uploadFile { uploadUrl assetUrl headers { key value } }
+  }
+}
+```
+
+**Step 2: Upload file bytes** using `curl`:
+```bash
+# Build header flags from the returned headers array
+curl -X PUT -H "Content-Type: <contentType>" \
+  -H "<key1>: <value1>" -H "<key2>: <value2>" \
+  --data-binary @<local-file-path> "<uploadUrl>"
+```
+
+**Step 3: Embed in workpad** — add `![description](assetUrl)` to the workpad comment body (either via `sync_workpad` or `commentUpdate`).
+
+**Supported content types**: `image/png`, `image/jpeg`, `image/gif`, `video/mp4`, `application/pdf`.
+
+**When to capture media**: Only when evidence adds value — screenshots of UI changes, recordings of interaction flows, or error screenshots for debugging. Do not upload media for non-visual tasks (e.g., pure API or library changes).
 
 ## Documentation Maintenance
 

@@ -6,6 +6,7 @@ export * from "./config/config-resolver.js";
 export * from "./config/types.js";
 export * from "./codex/app-server-client.js";
 export * from "./codex/linear-graphql-tool.js";
+export * from "./codex/workpad-sync-tool.js";
 export * from "./config/workflow-loader.js";
 export * from "./config/workflow-watch.js";
 export * from "./domain/model.js";

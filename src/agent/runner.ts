@@ -7,6 +7,7 @@ import {
   type CodexTurnResult,
 } from "../codex/app-server-client.js";
 import { createLinearGraphqlDynamicTool } from "../codex/linear-graphql-tool.js";
+import { createWorkpadSyncDynamicTool } from "../codex/workpad-sync-tool.js";
 import type { ResolvedWorkflowConfig, StageDefinition } from "../config/types.js";
 import { createRunnerFromConfig, isAiSdkRunner } from "../runners/factory.js";
 import type { RunnerKind } from "../runners/types.js";
@@ -359,13 +360,25 @@ export class AgentRunner {
       return [];
     }
 
-    return [
+    const tools: CodexDynamicTool[] = [
       createLinearGraphqlDynamicTool({
         endpoint: this.config.tracker.endpoint,
         apiKey: this.config.tracker.apiKey,
         ...(this.fetchFn === undefined ? {} : { fetchFn: this.fetchFn }),
       }),
     ];
+
+    if (this.config.tracker.apiKey !== null) {
+      tools.push(
+        createWorkpadSyncDynamicTool({
+          apiKey: this.config.tracker.apiKey,
+          endpoint: this.config.tracker.endpoint,
+          ...(this.fetchFn === undefined ? {} : { fetchFn: this.fetchFn }),
+        }),
+      );
+    }
+
+    return tools;
   }
 
   private async refreshIssueState(issue: Issue): Promise<Issue> {
