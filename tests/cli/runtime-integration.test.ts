@@ -578,6 +578,7 @@ function createConfig(
       maxConcurrentAgents: 10,
       maxTurns: 20,
       maxRetryBackoffMs: 300_000,
+      maxRetryAttempts: 5,
       maxConcurrentAgentsByState: {},
     },
     codex: {

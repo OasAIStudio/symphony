@@ -1,12 +1,14 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  FAILURE_CLASSES,
   ORCHESTRATOR_EVENTS,
   ORCHESTRATOR_ISSUE_STATUSES,
   RUN_ATTEMPT_PHASES,
   createEmptyLiveSession,
   createInitialOrchestratorState,
   normalizeIssueState,
+  parseFailureSignal,
   toSessionId,
   toWorkspaceKey,
 } from "../../src/domain/model.js";
@@ -89,5 +91,45 @@ describe("domain model", () => {
       secondsRunning: 0,
     });
     expect(state.codexRateLimits).toBeNull();
+  });
+});
+
+describe("parseFailureSignal", () => {
+  it("defines the expected failure classes", () => {
+    expect(FAILURE_CLASSES).toEqual(["verify", "review", "spec", "infra"]);
+  });
+
+  it("parses each failure class from agent output", () => {
+    expect(parseFailureSignal("[STAGE_FAILED: verify]")).toEqual({ failureClass: "verify" });
+    expect(parseFailureSignal("[STAGE_FAILED: review]")).toEqual({ failureClass: "review" });
+    expect(parseFailureSignal("[STAGE_FAILED: spec]")).toEqual({ failureClass: "spec" });
+    expect(parseFailureSignal("[STAGE_FAILED: infra]")).toEqual({ failureClass: "infra" });
+  });
+
+  it("returns null for null, undefined, or empty input", () => {
+    expect(parseFailureSignal(null)).toBeNull();
+    expect(parseFailureSignal(undefined)).toBeNull();
+    expect(parseFailureSignal("")).toBeNull();
+  });
+
+  it("returns null when no failure signal is present", () => {
+    expect(parseFailureSignal("[STAGE_COMPLETE]")).toBeNull();
+    expect(parseFailureSignal("All tests passed successfully.")).toBeNull();
+    expect(parseFailureSignal("STAGE_FAILED: verify")).toBeNull();
+  });
+
+  it("extracts signal from longer agent output", () => {
+    const output = "Tests failed.\n[STAGE_FAILED: verify]\nSee logs for details.";
+    expect(parseFailureSignal(output)).toEqual({ failureClass: "verify" });
+  });
+
+  it("handles extra whitespace inside brackets", () => {
+    expect(parseFailureSignal("[STAGE_FAILED:  spec ]")).toEqual({ failureClass: "spec" });
+    expect(parseFailureSignal("[STAGE_FAILED:review]")).toEqual({ failureClass: "review" });
+  });
+
+  it("rejects unknown failure classes", () => {
+    expect(parseFailureSignal("[STAGE_FAILED: unknown]")).toBeNull();
+    expect(parseFailureSignal("[STAGE_FAILED: timeout]")).toBeNull();
   });
 });

@@ -485,6 +485,278 @@ describe("orchestrator core integration flows", () => {
   });
 });
 
+describe("max retry safety net", () => {
+  it("retries normally when attempt is under the max limit", async () => {
+    const timers = createFakeTimerScheduler();
+    const orchestrator = createOrchestrator({
+      timerScheduler: timers,
+      config: createConfig({ agent: { maxRetryAttempts: 3 } }),
+    });
+
+    await orchestrator.pollTick();
+    // Simulate abnormal exit — attempt will be 1 (under limit of 3)
+    const retryEntry = orchestrator.onWorkerExit({
+      issueId: "1",
+      outcome: "abnormal",
+      reason: "turn failed",
+    });
+
+    expect(retryEntry).not.toBeNull();
+    expect(retryEntry).toMatchObject({
+      issueId: "1",
+      attempt: 1,
+      error: "worker exited: turn failed",
+    });
+    expect(orchestrator.getState().completed.has("1")).toBe(false);
+    expect(orchestrator.getState().claimed.has("1")).toBe(true);
+  });
+
+  it("escalates when failure retry attempt exceeds the max limit", async () => {
+    const escalationComments: Array<{ issueId: string; body: string }> = [];
+    const escalationStates: Array<{ issueId: string; state: string }> = [];
+    const timers = createFakeTimerScheduler();
+
+    const orchestrator = new OrchestratorCore({
+      config: createConfig({
+        agent: { maxRetryAttempts: 2 },
+      }),
+      tracker: createTracker({
+        candidates: [createIssue({ id: "1", identifier: "ISSUE-1" })],
+        statesById: [{ id: "1", identifier: "ISSUE-1", state: "In Progress" }],
+      }),
+      spawnWorker: async () => ({
+        workerHandle: { pid: 1001 },
+        monitorHandle: { ref: "monitor-1" },
+      }),
+      postComment: async (issueId, body) => {
+        escalationComments.push({ issueId, body });
+      },
+      updateIssueState: async (issueId, _identifier, state) => {
+        escalationStates.push({ issueId, state });
+      },
+      timerScheduler: timers,
+      now: () => new Date("2026-03-06T00:00:05.000Z"),
+    });
+
+    await orchestrator.pollTick();
+
+    // Simulate: attempt 1 (under limit of 2)
+    const retry1 = orchestrator.onWorkerExit({
+      issueId: "1",
+      outcome: "abnormal",
+      reason: "turn failed",
+    });
+    expect(retry1).not.toBeNull();
+    expect(retry1).toMatchObject({ attempt: 1 });
+
+    // Fire retry timer → redispatch → exit again → attempt 2 (still at limit)
+    const retryResult = await orchestrator.onRetryTimer("1");
+    expect(retryResult.dispatched).toBe(true);
+
+    const retry2 = orchestrator.onWorkerExit({
+      issueId: "1",
+      outcome: "abnormal",
+      reason: "turn failed again",
+    });
+    expect(retry2).not.toBeNull();
+    expect(retry2).toMatchObject({ attempt: 2 });
+
+    // Fire retry timer → redispatch → exit again → attempt 3 (exceeds limit of 2)
+    const retryResult2 = await orchestrator.onRetryTimer("1");
+    expect(retryResult2.dispatched).toBe(true);
+
+    const retry3 = orchestrator.onWorkerExit({
+      issueId: "1",
+      outcome: "abnormal",
+      reason: "turn failed yet again",
+    });
+
+    // Should be null — escalated
+    expect(retry3).toBeNull();
+    expect(orchestrator.getState().completed.has("1")).toBe(true);
+    expect(orchestrator.getState().claimed.has("1")).toBe(false);
+    expect(orchestrator.getState().retryAttempts).not.toHaveProperty("1");
+
+    // Verify escalation side effects were fired
+    expect(escalationComments).toHaveLength(1);
+    expect(escalationComments[0]?.body).toContain("Max retry attempts (2) exceeded");
+  });
+
+  it("escalates on onRetryTimer failure retry when attempt exceeds limit", async () => {
+    const escalationComments: Array<{ issueId: string; body: string }> = [];
+    const timers = createFakeTimerScheduler();
+
+    const orchestrator = new OrchestratorCore({
+      config: createConfig({
+        agent: { maxConcurrentAgents: 0, maxRetryAttempts: 2 },
+      }),
+      tracker: createTracker({
+        candidates: [createIssue({ id: "1", identifier: "ISSUE-1" })],
+        statesById: [{ id: "1", identifier: "ISSUE-1", state: "In Progress" }],
+      }),
+      spawnWorker: async () => ({
+        workerHandle: { pid: 1001 },
+        monitorHandle: { ref: "monitor-1" },
+      }),
+      postComment: async (issueId, body) => {
+        escalationComments.push({ issueId, body });
+      },
+      timerScheduler: timers,
+      now: () => new Date("2026-03-06T00:00:05.000Z"),
+    });
+
+    // Manually create a retry entry at attempt 2 (the limit)
+    orchestrator.getState().claimed.add("1");
+    orchestrator.getState().retryAttempts["1"] = {
+      issueId: "1",
+      identifier: "ISSUE-1",
+      attempt: 2,
+      dueAtMs: Date.parse("2026-03-06T00:00:00.000Z"),
+      timerHandle: null,
+      error: "previous failure",
+    };
+
+    // When onRetryTimer fires and slots are exhausted, it calls scheduleRetry
+    // with attempt 3, which exceeds maxRetryAttempts=2
+    const result = await orchestrator.onRetryTimer("1");
+
+    expect(result.dispatched).toBe(false);
+    expect(result.retryEntry).toBeNull();
+    expect(orchestrator.getState().completed.has("1")).toBe(true);
+    expect(orchestrator.getState().claimed.has("1")).toBe(false);
+    expect(escalationComments).toHaveLength(1);
+    expect(escalationComments[0]?.body).toContain("Max retry attempts (2) exceeded");
+  });
+
+  it("does not count continuation retries against the max limit", async () => {
+    const timers = createFakeTimerScheduler();
+    const orchestrator = createOrchestrator({
+      timerScheduler: timers,
+      config: createConfig({ agent: { maxRetryAttempts: 1 } }),
+    });
+
+    await orchestrator.pollTick();
+
+    // Normal exit with no failure signal → continuation retry with attempt=1
+    const retryEntry = orchestrator.onWorkerExit({
+      issueId: "1",
+      outcome: "normal",
+      endedAt: new Date("2026-03-06T00:00:05.000Z"),
+    });
+
+    // Should still succeed even though maxRetryAttempts=1
+    // because continuation retries don't count against the limit
+    expect(retryEntry).not.toBeNull();
+    expect(retryEntry).toMatchObject({
+      issueId: "1",
+      attempt: 1,
+      error: null,
+    });
+    expect(orchestrator.getState().completed.has("1")).toBe(true);
+    expect(orchestrator.getState().claimed.has("1")).toBe(true);
+  });
+
+  it("respects the limit for verify failure signals", async () => {
+    const escalationComments: Array<{ issueId: string; body: string }> = [];
+
+    const orchestrator = new OrchestratorCore({
+      config: createConfig({
+        agent: { maxRetryAttempts: 1 },
+      }),
+      tracker: createTracker({
+        candidates: [createIssue({ id: "1", identifier: "ISSUE-1" })],
+        statesById: [{ id: "1", identifier: "ISSUE-1", state: "In Progress" }],
+      }),
+      spawnWorker: async () => ({
+        workerHandle: { pid: 1001 },
+        monitorHandle: { ref: "monitor-1" },
+      }),
+      postComment: async (issueId, body) => {
+        escalationComments.push({ issueId, body });
+      },
+      now: () => new Date("2026-03-06T00:00:05.000Z"),
+    });
+
+    await orchestrator.pollTick();
+
+    // First exit with verify failure → attempt 1 (at limit, still OK)
+    const retry1 = orchestrator.onWorkerExit({
+      issueId: "1",
+      outcome: "normal",
+      agentMessage: "[STAGE_FAILED: verify]",
+    });
+    expect(retry1).not.toBeNull();
+    expect(retry1).toMatchObject({ attempt: 1 });
+
+    // Fire retry, redispatch, exit with verify failure again → attempt 2 (exceeds limit=1)
+    const retryResult = await orchestrator.onRetryTimer("1");
+    expect(retryResult.dispatched).toBe(true);
+
+    const retry2 = orchestrator.onWorkerExit({
+      issueId: "1",
+      outcome: "normal",
+      agentMessage: "[STAGE_FAILED: verify]",
+    });
+
+    expect(retry2).toBeNull();
+    expect(orchestrator.getState().completed.has("1")).toBe(true);
+    expect(orchestrator.getState().claimed.has("1")).toBe(false);
+    expect(escalationComments).toHaveLength(1);
+    expect(escalationComments[0]?.body).toContain("Max retry attempts (1) exceeded");
+  });
+
+  it("respects the limit for infra failure signals", async () => {
+    const escalationComments: Array<{ issueId: string; body: string }> = [];
+
+    const orchestrator = new OrchestratorCore({
+      config: createConfig({
+        agent: { maxRetryAttempts: 1 },
+      }),
+      tracker: createTracker({
+        candidates: [createIssue({ id: "1", identifier: "ISSUE-1" })],
+        statesById: [{ id: "1", identifier: "ISSUE-1", state: "In Progress" }],
+      }),
+      spawnWorker: async () => ({
+        workerHandle: { pid: 1001 },
+        monitorHandle: { ref: "monitor-1" },
+      }),
+      postComment: async (issueId, body) => {
+        escalationComments.push({ issueId, body });
+      },
+      now: () => new Date("2026-03-06T00:00:05.000Z"),
+    });
+
+    await orchestrator.pollTick();
+
+    // First exit with infra failure → attempt 1 (at limit)
+    const retry1 = orchestrator.onWorkerExit({
+      issueId: "1",
+      outcome: "normal",
+      agentMessage: "[STAGE_FAILED: infra]",
+    });
+    expect(retry1).not.toBeNull();
+
+    const retryResult = await orchestrator.onRetryTimer("1");
+    expect(retryResult.dispatched).toBe(true);
+
+    // Second exit with infra failure → attempt 2 (exceeds limit=1)
+    const retry2 = orchestrator.onWorkerExit({
+      issueId: "1",
+      outcome: "normal",
+      agentMessage: "[STAGE_FAILED: infra]",
+    });
+
+    expect(retry2).toBeNull();
+    expect(orchestrator.getState().completed.has("1")).toBe(true);
+    expect(escalationComments).toHaveLength(1);
+  });
+
+  it("defaults maxRetryAttempts to 5 from config resolver", () => {
+    const config = createConfig();
+    expect(config.agent.maxRetryAttempts).toBe(5);
+  });
+});
+
 function createOrchestrator(overrides?: {
   config?: ResolvedWorkflowConfig;
   tracker?: IssueTracker;
@@ -570,6 +842,7 @@ function createConfig(overrides?: {
       maxConcurrentAgents: 2,
       maxTurns: 5,
       maxRetryBackoffMs: 300_000,
+      maxRetryAttempts: 5,
       maxConcurrentAgentsByState: {},
       ...overrides?.agent,
     },

@@ -6,6 +6,7 @@ import type {
   StageDefinition,
 } from "../config/types.js";
 import {
+  type FailureClass,
   type Issue,
   type OrchestratorState,
   type RetryEntry,
@@ -13,6 +14,7 @@ import {
   createEmptyLiveSession,
   createInitialOrchestratorState,
   normalizeIssueState,
+  parseFailureSignal,
 } from "../domain/model.js";
 import {
   addEndedSessionRuntime,
@@ -74,6 +76,7 @@ export interface OrchestratorCoreOptions {
     attempt: number | null;
     stage: StageDefinition | null;
     stageName: string | null;
+    reworkCount: number;
   }) => Promise<SpawnWorkerResult> | SpawnWorkerResult;
   stopRunningIssue?: (input: {
     issueId: string;
@@ -167,6 +170,20 @@ export class OrchestratorCore {
       this.state.running[issue.id] !== undefined
     ) {
       return false;
+    }
+
+    // Allow resumed issues: clear completed flag when issue returns with a
+    // non-escalation active state (e.g., "Resume" or "Todo").  Issues still in
+    // the escalation state (e.g., "Blocked") remain blocked until a human
+    // explicitly moves them.
+    if (this.state.completed.has(issue.id)) {
+      if (
+        this.config.escalationState !== null &&
+        normalizedState === normalizeIssueState(this.config.escalationState)
+      ) {
+        return false;
+      }
+      this.state.completed.delete(issue.id);
     }
 
     const allowClaimedIssueId = options?.allowClaimedIssueId;
@@ -323,6 +340,7 @@ export class OrchestratorCore {
     outcome: WorkerExitOutcome;
     reason?: string;
     endedAt?: Date;
+    agentMessage?: string;
   }): RetryEntry | null {
     const runningEntry = this.state.running[input.issueId];
     if (runningEntry === undefined) {
@@ -337,6 +355,15 @@ export class OrchestratorCore {
     );
 
     if (input.outcome === "normal") {
+      const failureSignal = parseFailureSignal(input.agentMessage);
+      if (failureSignal !== null) {
+        return this.handleFailureSignal(
+          input.issueId,
+          runningEntry,
+          failureSignal.failureClass,
+        );
+      }
+
       const transition = this.advanceStage(input.issueId);
       if (transition === "completed") {
         this.state.completed.add(input.issueId);
@@ -413,6 +440,231 @@ export class OrchestratorCore {
     // Move to the next stage
     this.state.issueStages[issueId] = nextStageName;
     return "advanced";
+  }
+
+  /**
+   * Handle agent-reported failure signals parsed from output.
+   * Routes to retry, rework, or escalation based on failure class.
+   */
+  private handleFailureSignal(
+    issueId: string,
+    runningEntry: RunningEntry,
+    failureClass: FailureClass,
+  ): RetryEntry | null {
+    if (failureClass === "spec") {
+      // Spec failures are unrecoverable — escalate immediately
+      this.state.completed.add(issueId);
+      this.releaseClaim(issueId);
+      delete this.state.issueStages[issueId];
+      delete this.state.issueReworkCounts[issueId];
+      void this.fireEscalationSideEffects(
+        issueId,
+        runningEntry.identifier,
+        "Agent reported unrecoverable spec failure. Escalating for manual review.",
+      );
+      return null;
+    }
+
+    if (failureClass === "verify" || failureClass === "infra") {
+      // Retryable failures — use existing exponential backoff
+      return this.scheduleRetry(
+        issueId,
+        nextRetryAttempt(runningEntry.retryAttempt),
+        {
+          identifier: runningEntry.identifier,
+          error: `agent reported failure: ${failureClass}`,
+          delayType: "failure",
+        },
+      );
+    }
+
+    // failureClass === "review" — trigger rework via gate lookup
+    return this.handleReviewFailure(issueId, runningEntry);
+  }
+
+  /**
+   * Handle review failure: find the downstream gate and use its rework target.
+   * Falls back to retry if no gate or rework target is found.
+   */
+  private handleReviewFailure(
+    issueId: string,
+    runningEntry: RunningEntry,
+  ): RetryEntry | null {
+    const stagesConfig = this.config.stages;
+    if (stagesConfig === null) {
+      // No stages — fall back to retry
+      return this.scheduleRetry(
+        issueId,
+        nextRetryAttempt(runningEntry.retryAttempt),
+        {
+          identifier: runningEntry.identifier,
+          error: "agent reported failure: review",
+          delayType: "failure",
+        },
+      );
+    }
+
+    const currentStageName = this.state.issueStages[issueId];
+    if (currentStageName === undefined) {
+      return this.scheduleRetry(
+        issueId,
+        nextRetryAttempt(runningEntry.retryAttempt),
+        {
+          identifier: runningEntry.identifier,
+          error: "agent reported failure: review",
+          delayType: "failure",
+        },
+      );
+    }
+
+    // Check if the current stage itself has onRework (agent-type review stages)
+    const currentStage = stagesConfig.stages[currentStageName];
+    if (currentStage !== undefined && currentStage.type === "agent" && currentStage.transitions.onRework !== null) {
+      // Use reworkGate directly — it now supports agent stages with onRework
+      const reworkTarget = this.reworkGate(issueId);
+      if (reworkTarget === "escalated") {
+        void this.fireEscalationSideEffects(
+          issueId,
+          runningEntry.identifier,
+          "Agent review failure: max rework attempts exceeded. Escalating for manual review.",
+        );
+        return null;
+      }
+      if (reworkTarget !== null) {
+        return this.scheduleRetry(issueId, 1, {
+          identifier: runningEntry.identifier,
+          error: `agent review failure: rework to ${reworkTarget}`,
+          delayType: "continuation",
+        });
+      }
+      // reworkTarget === null should not happen since we checked onRework !== null,
+      // but fall through to downstream gate search just in case
+    }
+
+    // Walk from current stage's onComplete to find the next gate
+    const gateName = this.findDownstreamGate(currentStageName);
+    if (gateName === null) {
+      return this.scheduleRetry(
+        issueId,
+        nextRetryAttempt(runningEntry.retryAttempt),
+        {
+          identifier: runningEntry.identifier,
+          error: "agent reported failure: review",
+          delayType: "failure",
+        },
+      );
+    }
+
+    // Use the gate's rework logic (reuses reworkGate by temporarily setting stage)
+    const savedStage = this.state.issueStages[issueId]!;
+    this.state.issueStages[issueId] = gateName;
+    let reworkTarget: string | "escalated" | null;
+    try {
+      reworkTarget = this.reworkGate(issueId);
+    } catch (err) {
+      this.state.issueStages[issueId] = savedStage;
+      throw err;
+    }
+    if (reworkTarget === null) {
+      // No rework target — restore and fall back to retry
+      this.state.issueStages[issueId] = savedStage;
+      return this.scheduleRetry(
+        issueId,
+        nextRetryAttempt(runningEntry.retryAttempt),
+        {
+          identifier: runningEntry.identifier,
+          error: "agent reported failure: review (no rework target on downstream gate)",
+          delayType: "failure",
+        },
+      );
+    }
+
+    if (reworkTarget === "escalated") {
+      // reworkGate already cleaned up state — fire escalation side effects
+      void this.fireEscalationSideEffects(
+        issueId,
+        runningEntry.identifier,
+        "Agent review failure: max rework attempts exceeded. Escalating for manual review.",
+      );
+      return null;
+    }
+
+    // Rework target set by reworkGate — schedule continuation
+    return this.scheduleRetry(issueId, 1, {
+      identifier: runningEntry.identifier,
+      error: `agent review failure: rework to ${reworkTarget}`,
+      delayType: "continuation",
+    });
+  }
+
+  /**
+   * Walk from a stage's onComplete transition to find the next gate stage.
+   * Returns the gate stage name or null if none found.
+   */
+  private findDownstreamGate(startStageName: string): string | null {
+    const stagesConfig = this.config.stages;
+    if (stagesConfig === null) {
+      return null;
+    }
+
+    const visited = new Set<string>();
+    let current = startStageName;
+
+    while (!visited.has(current)) {
+      visited.add(current);
+      const stage = stagesConfig.stages[current];
+      if (stage === undefined) {
+        return null;
+      }
+
+      const next = stage.transitions.onComplete;
+      if (next === null) {
+        return null;
+      }
+
+      const nextStage = stagesConfig.stages[next];
+      if (nextStage === undefined) {
+        return null;
+      }
+
+      if (nextStage.type === "gate") {
+        return next;
+      }
+
+      // Agent-type stages with onRework can also serve as rework gates
+      if (nextStage.type === "agent" && nextStage.transitions.onRework !== null) {
+        return next;
+      }
+
+      current = next;
+    }
+
+    return null;
+  }
+
+  /**
+   * Fire escalation side effects (updateIssueState + postComment).
+   * Best-effort: failures are logged, not propagated.
+   */
+  private async fireEscalationSideEffects(
+    issueId: string,
+    issueIdentifier: string,
+    comment: string,
+  ): Promise<void> {
+    if (this.config.escalationState !== null && this.updateIssueState !== undefined) {
+      try {
+        await this.updateIssueState(issueId, issueIdentifier, this.config.escalationState);
+      } catch (err) {
+        console.warn(`[orchestrator] Failed to update escalation state for ${issueIdentifier}:`, err);
+      }
+    }
+    if (this.postComment !== undefined) {
+      try {
+        await this.postComment(issueId, comment);
+      } catch (err) {
+        console.warn(`[orchestrator] Failed to post escalation comment for ${issueIdentifier}:`, err);
+      }
+    }
   }
 
   /**
@@ -503,6 +755,7 @@ export class OrchestratorCore {
   /**
    * Handle gate rework: send issue back to rework target.
    * Tracks rework count and escalates to terminal if max exceeded.
+   * Works for both gate-type stages and agent-type stages with onRework set.
    * Returns the rework target stage name, "escalated" if max rework
    * exceeded, or null if no rework transition defined.
    */
@@ -518,7 +771,12 @@ export class OrchestratorCore {
     }
 
     const currentStage = stagesConfig.stages[currentStageName];
-    if (currentStage === undefined || currentStage.type !== "gate") {
+    if (currentStage === undefined) {
+      return null;
+    }
+
+    // Allow gate stages (always) and agent stages with onRework set
+    if (currentStage.type !== "gate" && !(currentStage.type === "agent" && currentStage.transitions.onRework !== null)) {
       return null;
     }
 
@@ -671,7 +929,8 @@ export class OrchestratorCore {
     }
 
     try {
-      const spawned = await this.spawnWorker({ issue, attempt, stage, stageName });
+      const reworkCount = this.state.issueReworkCounts[issue.id] ?? 0;
+      const spawned = await this.spawnWorker({ issue, attempt, stage, stageName, reworkCount });
       this.state.running[issue.id] = {
         ...createEmptyLiveSession(),
         issue,
@@ -829,7 +1088,24 @@ export class OrchestratorCore {
       error: string | null;
       delayType: "continuation" | "failure";
     },
-  ): RetryEntry {
+  ): RetryEntry | null {
+    // Max retry guard — only applies to failure retries, not continuations
+    if (
+      input.delayType === "failure" &&
+      attempt > this.config.agent.maxRetryAttempts
+    ) {
+      this.state.completed.add(issueId);
+      this.releaseClaim(issueId);
+      delete this.state.issueStages[issueId];
+      delete this.state.issueReworkCounts[issueId];
+      void this.fireEscalationSideEffects(
+        issueId,
+        input.identifier ?? issueId,
+        `Max retry attempts (${this.config.agent.maxRetryAttempts}) exceeded. Escalating for manual review.`,
+      );
+      return null;
+    }
+
     this.clearRetryEntry(issueId);
 
     const delayMs =

@@ -27,6 +27,7 @@ export interface WorkflowAgentConfig {
   maxConcurrentAgents: number;
   maxTurns: number;
   maxRetryBackoffMs: number;
+  maxRetryAttempts: number;
   maxConcurrentAgentsByState: Readonly<Record<string, number>>;
 }
 

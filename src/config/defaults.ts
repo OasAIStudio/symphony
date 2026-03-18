@@ -19,6 +19,7 @@ export const DEFAULT_HOOK_TIMEOUT_MS = 60_000;
 export const DEFAULT_MAX_CONCURRENT_AGENTS = 10;
 export const DEFAULT_MAX_TURNS = 20;
 export const DEFAULT_MAX_RETRY_BACKOFF_MS = 300_000;
+export const DEFAULT_MAX_RETRY_ATTEMPTS = 5;
 export const DEFAULT_MAX_CONCURRENT_AGENTS_BY_STATE = Object.freeze(
   {},
 ) as Readonly<Record<string, number>>;
@@ -60,6 +61,7 @@ export const SPEC_DEFAULTS = Object.freeze({
     maxConcurrentAgents: DEFAULT_MAX_CONCURRENT_AGENTS,
     maxTurns: DEFAULT_MAX_TURNS,
     maxRetryBackoffMs: DEFAULT_MAX_RETRY_BACKOFF_MS,
+    maxRetryAttempts: DEFAULT_MAX_RETRY_ATTEMPTS,
     maxConcurrentAgentsByState: DEFAULT_MAX_CONCURRENT_AGENTS_BY_STATE,
   },
   runner: {

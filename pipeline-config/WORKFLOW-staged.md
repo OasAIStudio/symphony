@@ -8,6 +8,7 @@ tracker:
     - In Progress
     - In Review
     - Blocked
+    - Resume
   terminal_states:
     - Done
     - Cancelled
@@ -93,31 +94,13 @@ stages:
     on_complete: review
 
   review:
-    type: gate
-    gate_type: ensemble
+    type: agent
+    runner: claude-code
+    model: claude-opus-4-6
+    max_turns: 15
     max_rework: 3
     linear_state: In Review
-    reviewers:
-      - runner: gemini
-        model: gemini-2.5-pro
-        role: adversarial-reviewer
-        prompt: |
-          You are reviewing a small, scoped task from a Linear issue. The implementation was done by an autonomous agent.
-          Focus on correctness relative to the issue description — does the code do what was asked?
-          PASS if: the implementation is functionally correct, tests are present, and no obvious bugs exist.
-          FAIL only for: broken logic, missing core requirements from the issue description, or code that would crash at runtime.
-          Do NOT fail for: style preferences, missing comments, missing edge-case handling beyond the issue scope, or theoretical concerns that don't apply to the actual diff.
-          Be pragmatic. These are small, well-scoped tasks — not production audits.
-      - runner: gemini
-        model: gemini-2.5-pro
-        role: security-reviewer
-        prompt: |
-          You are reviewing a small, scoped task for security issues. Focus only on the actual code changes in the diff.
-          PASS if: no injection vulnerabilities (SQL, command, XSS), no hardcoded secrets, no obviously broken auth checks.
-          FAIL only for: concrete, exploitable vulnerabilities visible in the diff — not theoretical risks.
-          Do NOT fail for: information disclosure on health/status endpoints, use of non-cryptographic randomness for non-security purposes, missing rate limiting, or theoretical timing attacks.
-          The bar for FAIL is: "an attacker could exploit this specific code." If you can't describe the exploit, PASS.
-    on_approve: merge
+    on_complete: merge
     on_rework: implement
 
   merge:
@@ -152,6 +135,12 @@ Labels: {{ issue.labels | join: ", " }}
 {% if stageName == "investigate" %}
 ## Stage: Investigation
 You are in the INVESTIGATE stage. Your job is to analyze the issue and create an implementation plan.
+
+{% if issue.state == "Resume" %}
+## RESUME CONTEXT
+This issue was previously blocked. Check the issue comments for a `## Resume Context` comment explaining what changed. Focus your investigation on the blocking reasons and what has been updated.
+{% endif %}
+
 - Read the codebase to understand existing patterns and architecture
 - Identify which files need to change and what the approach should be
 - Post a comment on the Linear issue (via `gh`) with your investigation findings and proposed implementation plan
@@ -193,12 +182,25 @@ After completing your investigation, create the workpad comment on this Linear i
    ```
 4. Fill the Plan and Acceptance Criteria sections from your investigation findings.
 
-- When you have completed your investigation and posted the workpad, output the exact text `[STAGE_COMPLETE]` as the very last line of your final message.
+## Completion Signals
+When you are done:
+- If investigation is complete and workpad is posted: output `[STAGE_COMPLETE]`
+- If the spec is ambiguous or contradictory: output `[STAGE_FAILED: spec]` with an explanation
+- If you hit infrastructure issues (API limits, network errors): output `[STAGE_FAILED: infra]` with details
 {% endif %}
 
 {% if stageName == "implement" %}
 ## Stage: Implementation
 You are in the IMPLEMENT stage. An investigation was done in the previous stage — check issue comments for the plan.
+
+{% if reworkCount > 0 %}
+## REWORK ATTEMPT {{ reworkCount }}
+This is a rework attempt. Read ALL comments on this Linear issue starting with `## Review Findings`. These contain the specific findings you must fix.
+- Fix ONLY the identified findings
+- Do not modify code outside the affected files unless strictly necessary
+- Do not reinterpret the spec
+- If a finding conflicts with the spec, output `[STAGE_FAILED: spec]` with an explanation
+{% endif %}
 
 ## Implementation Steps
 
@@ -207,9 +209,14 @@ You are in the IMPLEMENT stage. An investigation was done in the previous stage 
 3. Implement the task per the issue description.
 4. Write tests as needed.
 5. Run all `# Verify:` commands from the spec. You are not done until every verify command exits 0.
-6. Commit your changes with message format: `feat({{ issue.identifier }}): <description>`.
-7. Open a PR via `gh pr create` with the issue description in the PR body.
-8. Link the PR to the Linear issue by including `{{ issue.identifier }}` in the PR title or body.
+6. Before creating the PR, capture structured tool output:
+   - Run `npx tsc --noEmit 2>&1` and include output in PR body under `## Tool Output > TypeScript`
+   - Run `npm test 2>&1` and include summary in PR body under `## Tool Output > Tests`
+   - Run `semgrep scan --config auto --json 2>&1` (if available) and include raw output in PR body under `## SAST Output`
+   - Do NOT filter or interpret SAST results — include them verbatim.
+7. Commit your changes with message format: `feat({{ issue.identifier }}): <description>`.
+8. Open a PR via `gh pr create` with the issue description in the PR body. Include the Tool Output and SAST Output sections.
+9. Link the PR to the Linear issue by including `{{ issue.identifier }}` in the PR title or body.
 
 ### Workpad (implement)
 Update the workpad comment at these milestones during implementation.
@@ -227,12 +234,28 @@ Update the workpad comment at these milestones during implementation.
 4. Do NOT update the workpad after every small code change — only at the milestones above.
 5. If no workpad comment exists (e.g., investigation stage was skipped), create one using the template from the investigate stage instructions.
 
-9. **If your changes are app-touching** (UI, API responses visible to users, frontend assets), capture a screenshot after validation passes and embed it in the workpad:
+10. **If your changes are app-touching** (UI, API responses visible to users, frontend assets), capture a screenshot after validation passes and embed it in the workpad:
    - Take a screenshot (e.g., `npx playwright screenshot` or `curl` the endpoint and save the response).
    - Upload it using the fileUpload flow described in the **Media in Workpads** section.
    - Add the image to the workpad comment under Notes: `![screenshot after validation](assetUrl)`.
    - Skip this step for non-visual changes (library code, configs, internal refactors).
-10. When you have opened the PR and all verify commands pass, output the exact text `[STAGE_COMPLETE]` as the very last line of your final message.
+
+## Completion Signals
+When you are done:
+- If all verify commands pass and PR is created: output `[STAGE_COMPLETE]`
+- If you cannot resolve a verify failure after 3 attempts: output `[STAGE_FAILED: verify]` with the failing command and output
+- If the spec is ambiguous or contradictory: output `[STAGE_FAILED: spec]` with an explanation
+- If you hit infrastructure issues (API limits, network errors): output `[STAGE_FAILED: infra]` with details
+{% endif %}
+
+{% if stageName == "review" %}
+## Stage: Review
+You are a review agent. Load and execute the /pipeline-review skill.
+
+The PR for this issue is on the current branch. The issue description contains the frozen spec. The PR body contains Tool Output and SAST Output sections from the implementation agent.
+
+If all findings are clean or only P3/theoretical: output `[STAGE_COMPLETE]`
+If surviving P1/P2 findings exist: post them as a `## Review Findings` comment on the Linear issue, then output `[STAGE_FAILED: review]` with a one-line summary.
 {% endif %}
 
 {% if stageName == "merge" %}

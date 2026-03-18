@@ -509,4 +509,112 @@ describe("validateStagesConfig", () => {
       expect.stringContaining("'orphan' is unreachable"),
     );
   });
+
+  it("validates agent stage on_rework referencing valid stage", () => {
+    const stages: StagesConfig = {
+      initialStage: "implement",
+      stages: {
+        implement: {
+          type: "agent",
+          runner: null,
+          model: null,
+          prompt: null,
+          maxTurns: null,
+          timeoutMs: null,
+          concurrency: null,
+          gateType: null,
+          maxRework: null,
+          reviewers: [],
+          transitions: { onComplete: "review", onApprove: null, onRework: null },
+          linearState: null,
+        },
+        review: {
+          type: "agent",
+          runner: null,
+          model: null,
+          prompt: null,
+          maxTurns: null,
+          timeoutMs: null,
+          concurrency: null,
+          gateType: null,
+          maxRework: 3,
+          reviewers: [],
+          transitions: { onComplete: "done", onApprove: null, onRework: "implement" },
+          linearState: null,
+        },
+        done: {
+          type: "terminal",
+          runner: null,
+          model: null,
+          prompt: null,
+          maxTurns: null,
+          timeoutMs: null,
+          concurrency: null,
+          gateType: null,
+          maxRework: null,
+          reviewers: [],
+          transitions: { onComplete: null, onApprove: null, onRework: null },
+          linearState: null,
+        },
+      },
+    };
+    const result = validateStagesConfig(stages);
+    expect(result.ok).toBe(true);
+    expect(result.errors).toEqual([]);
+  });
+
+  it("rejects agent stage on_rework referencing unknown stage", () => {
+    const stages: StagesConfig = {
+      initialStage: "implement",
+      stages: {
+        implement: {
+          type: "agent",
+          runner: null,
+          model: null,
+          prompt: null,
+          maxTurns: null,
+          timeoutMs: null,
+          concurrency: null,
+          gateType: null,
+          maxRework: null,
+          reviewers: [],
+          transitions: { onComplete: "review", onApprove: null, onRework: null },
+          linearState: null,
+        },
+        review: {
+          type: "agent",
+          runner: null,
+          model: null,
+          prompt: null,
+          maxTurns: null,
+          timeoutMs: null,
+          concurrency: null,
+          gateType: null,
+          maxRework: 3,
+          reviewers: [],
+          transitions: { onComplete: "done", onApprove: null, onRework: "nonexistent" },
+          linearState: null,
+        },
+        done: {
+          type: "terminal",
+          runner: null,
+          model: null,
+          prompt: null,
+          maxTurns: null,
+          timeoutMs: null,
+          concurrency: null,
+          gateType: null,
+          maxRework: null,
+          reviewers: [],
+          transitions: { onComplete: null, onApprove: null, onRework: null },
+          linearState: null,
+        },
+      },
+    };
+    const result = validateStagesConfig(stages);
+    expect(result.ok).toBe(false);
+    expect(result.errors).toContainEqual(
+      expect.stringContaining("'review' on_rework references unknown stage 'nonexistent'"),
+    );
+  });
 });

@@ -489,6 +489,76 @@ describe("AgentRunner", () => {
     expect(tracker.fetchIssueStatesByIds).not.toHaveBeenCalled();
   });
 
+  it("breaks the turn loop early when the agent emits [STAGE_FAILED: ...]", async () => {
+    const root = await createRoot();
+    const tracker = createTracker({
+      refreshStates: [
+        { id: "issue-1", identifier: "ABC-123", state: "In Progress" },
+        { id: "issue-1", identifier: "ABC-123", state: "In Progress" },
+      ],
+    });
+    const runner = new AgentRunner({
+      config: createConfig(root, "unused"),
+      tracker,
+      createCodexClient: (input) => {
+        let turn = 0;
+        return {
+          async startSession({ prompt }: { prompt: string; title: string }) {
+            turn += 1;
+            input.onEvent({
+              event: "session_started",
+              timestamp: new Date().toISOString(),
+              codexAppServerPid: "1001",
+              sessionId: `thread-1-turn-${turn}`,
+              threadId: "thread-1",
+              turnId: `turn-${turn}`,
+            });
+            return {
+              status: "completed" as const,
+              threadId: "thread-1",
+              turnId: `turn-${turn}`,
+              sessionId: `thread-1-turn-${turn}`,
+              usage: null,
+              rateLimits: null,
+              message: `Tests failed.\n[STAGE_FAILED: verify]\nSee logs.`,
+            };
+          },
+          async continueTurn(prompt: string) {
+            turn += 1;
+            input.onEvent({
+              event: "session_started",
+              timestamp: new Date().toISOString(),
+              codexAppServerPid: "1001",
+              sessionId: `thread-1-turn-${turn}`,
+              threadId: "thread-1",
+              turnId: `turn-${turn}`,
+            });
+            return {
+              status: "completed" as const,
+              threadId: "thread-1",
+              turnId: `turn-${turn}`,
+              sessionId: `thread-1-turn-${turn}`,
+              usage: null,
+              rateLimits: null,
+              message: `turn ${turn}`,
+            };
+          },
+          close: vi.fn().mockResolvedValue(undefined),
+        };
+      },
+    });
+
+    const result = await runner.run({
+      issue: ISSUE_FIXTURE,
+      attempt: null,
+      stageName: "implement",
+    });
+
+    // maxTurns is 3, but should break after turn 1 due to [STAGE_FAILED: verify]
+    expect(result.turnsCompleted).toBe(1);
+    expect(result.lastTurn?.message).toContain("[STAGE_FAILED: verify]");
+  });
+
   it("cancels the run when the orchestrator aborts the worker signal", async () => {
     const root = await createRoot();
     const close = vi.fn().mockResolvedValue(undefined);
@@ -682,6 +752,7 @@ function createConfig(root: string, scenario: string): ResolvedWorkflowConfig {
       maxConcurrentAgents: 2,
       maxTurns: 3,
       maxRetryBackoffMs: 300_000,
+      maxRetryAttempts: 5,
       maxConcurrentAgentsByState: {},
     },
     codex: {

@@ -233,6 +233,37 @@ describe("orchestrator stage machine", () => {
     expect(orchestrator.getState().issueStages["1"]).toBe("investigate");
   });
 
+  it("reworks an agent-type stage with onRework and sends issue back to rework target", async () => {
+    const orchestrator = createStagedOrchestrator({
+      stages: createAgentReviewWorkflowConfig(),
+    });
+
+    await orchestrator.pollTick();
+    orchestrator.onWorkerExit({ issueId: "1", outcome: "normal" });
+    expect(orchestrator.getState().issueStages["1"]).toBe("review");
+
+    // Dispatch review agent
+    await orchestrator.onRetryTimer("1");
+
+    // Directly call reworkGate on an agent-type stage with onRework
+    const reworkTarget = orchestrator.reworkGate("1");
+    expect(reworkTarget).toBe("implement");
+    expect(orchestrator.getState().issueStages["1"]).toBe("implement");
+    expect(orchestrator.getState().issueReworkCounts["1"]).toBe(1);
+  });
+
+  it("returns null from reworkGate for agent-type stage without onRework", async () => {
+    const orchestrator = createStagedOrchestrator();
+
+    await orchestrator.pollTick();
+    expect(orchestrator.getState().issueStages["1"]).toBe("investigate");
+
+    // Investigate stage has no onRework — reworkGate should return null
+    const reworkTarget = orchestrator.reworkGate("1");
+    expect(reworkTarget).toBeNull();
+    expect(orchestrator.getState().issueStages["1"]).toBe("investigate");
+  });
+
   it("cleans up stage tracking when issue completes through terminal", async () => {
     const orchestrator = createStagedOrchestrator({
       stages: createSimpleTwoStageConfig(),
@@ -743,6 +774,82 @@ function createGateWorkflowConfig(): StagesConfig {
   };
 }
 
+function createAgentReviewWorkflowConfig(): StagesConfig {
+  return {
+    initialStage: "implement",
+    stages: {
+      implement: {
+        type: "agent",
+        runner: "claude-code",
+        model: "claude-sonnet-4-5",
+        prompt: "implement.liquid",
+        maxTurns: 30,
+        timeoutMs: null,
+        concurrency: null,
+        gateType: null,
+        maxRework: null,
+        reviewers: [],
+        transitions: {
+          onComplete: "review",
+          onApprove: null,
+          onRework: null,
+        },
+        linearState: null,
+      },
+      review: {
+        type: "agent",
+        runner: "claude-code",
+        model: "claude-opus-4-6",
+        prompt: "review.liquid",
+        maxTurns: 15,
+        timeoutMs: null,
+        concurrency: null,
+        gateType: null,
+        maxRework: 3,
+        reviewers: [],
+        transitions: {
+          onComplete: "merge",
+          onApprove: null,
+          onRework: "implement",
+        },
+        linearState: null,
+      },
+      merge: {
+        type: "agent",
+        runner: "claude-code",
+        model: "claude-sonnet-4-5",
+        prompt: "merge.liquid",
+        maxTurns: 5,
+        timeoutMs: null,
+        concurrency: null,
+        gateType: null,
+        maxRework: null,
+        reviewers: [],
+        transitions: {
+          onComplete: "done",
+          onApprove: null,
+          onRework: null,
+        },
+        linearState: null,
+      },
+      done: {
+        type: "terminal",
+        runner: null,
+        model: null,
+        prompt: null,
+        maxTurns: null,
+        timeoutMs: null,
+        concurrency: null,
+        gateType: null,
+        maxRework: null,
+        reviewers: [],
+        transitions: { onComplete: null, onApprove: null, onRework: null },
+        linearState: null,
+      },
+    },
+  };
+}
+
 function createTracker(input?: {
   candidates?: Issue[];
 }): IssueTracker {
@@ -795,6 +902,7 @@ function createConfig(overrides?: {
       maxConcurrentAgents: 2,
       maxTurns: 5,
       maxRetryBackoffMs: 300_000,
+      maxRetryAttempts: 5,
       maxConcurrentAgentsByState: {},
     },
     runner: {

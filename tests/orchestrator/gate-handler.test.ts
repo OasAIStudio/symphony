@@ -945,6 +945,7 @@ function createConfig(overrides?: { stages?: ReturnType<typeof createEnsembleWor
       maxConcurrentAgents: 2,
       maxTurns: 5,
       maxRetryBackoffMs: 300_000,
+      maxRetryAttempts: 5,
       maxConcurrentAgentsByState: {},
     },
     runner: { kind: "codex", model: null },

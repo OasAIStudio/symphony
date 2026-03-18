@@ -412,6 +412,7 @@ function createConfig(): ResolvedWorkflowConfig {
       maxConcurrentAgents: 2,
       maxTurns: 5,
       maxRetryBackoffMs: 300_000,
+      maxRetryAttempts: 5,
       maxConcurrentAgentsByState: {},
     },
     codex: {

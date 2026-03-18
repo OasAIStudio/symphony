@@ -36,6 +36,7 @@ export interface RenderPromptInput {
   issue: Issue;
   attempt: number | null;
   stageName?: string | null;
+  reworkCount?: number;
 }
 
 export interface BuildTurnPromptInput extends RenderPromptInput {
@@ -59,6 +60,7 @@ export async function renderPrompt(input: RenderPromptInput): Promise<string> {
       issue: toTemplateIssue(input.issue),
       attempt: input.attempt,
       stageName: input.stageName ?? null,
+      reworkCount: input.reworkCount ?? 0,
     });
   } catch (error) {
     throw toPromptTemplateError(error);

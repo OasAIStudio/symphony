@@ -233,6 +233,46 @@ describe("prompt builder", () => {
     expect(prompt).toContain("[STAGE_COMPLETE]");
   });
 
+  it("makes reworkCount available in the template context, defaulting to 0", async () => {
+    const prompt = await renderPrompt({
+      workflow: {
+        promptTemplate: "rework={{ reworkCount }}",
+      },
+      issue: ISSUE_FIXTURE,
+      attempt: null,
+    });
+
+    expect(prompt).toBe("rework=0");
+  });
+
+  it("renders reworkCount when explicitly provided", async () => {
+    const prompt = await renderPrompt({
+      workflow: {
+        promptTemplate:
+          "{% if reworkCount > 0 %}rework attempt {{ reworkCount }}{% else %}first attempt{% endif %}",
+      },
+      issue: ISSUE_FIXTURE,
+      attempt: null,
+      reworkCount: 3,
+    });
+
+    expect(prompt).toBe("rework attempt 3");
+  });
+
+  it("renders reworkCount as 0 on first attempt", async () => {
+    const prompt = await renderPrompt({
+      workflow: {
+        promptTemplate:
+          "{% if reworkCount > 0 %}rework attempt {{ reworkCount }}{% else %}first attempt{% endif %}",
+      },
+      issue: ISSUE_FIXTURE,
+      attempt: null,
+      reworkCount: 0,
+    });
+
+    expect(prompt).toBe("first attempt");
+  });
+
   it("reports invalid template syntax as a parse error", async () => {
     await expect(
       renderPrompt({

@@ -19,6 +19,7 @@ import {
   type Workspace,
   createEmptyLiveSession,
   normalizeIssueState,
+  parseFailureSignal,
 } from "../domain/model.js";
 import { applyCodexEventToSession } from "../logging/session-metrics.js";
 import type { IssueTracker } from "../tracker/tracker.js";
@@ -78,6 +79,7 @@ export interface AgentRunInput {
   signal?: AbortSignal;
   stage?: StageDefinition | null;
   stageName?: string | null;
+  reworkCount?: number;
 }
 
 export interface AgentRunResult {
@@ -272,6 +274,7 @@ export class AgentRunner {
           issue,
           attempt: input.attempt,
           stageName: input.stageName ?? null,
+          reworkCount: input.reworkCount ?? 0,
           turnNumber,
           maxTurns: effectiveMaxTurns,
         });
@@ -304,8 +307,11 @@ export class AgentRunner {
           ...(lastTurn.message === null ? {} : { message: lastTurn.message }),
         });
 
-        // Early exit: agent signaled stage completion
+        // Early exit: agent signaled stage completion or failure
         if (lastTurn.message !== null && lastTurn.message.trimEnd().endsWith("[STAGE_COMPLETE]")) {
+          break;
+        }
+        if (lastTurn.message !== null && parseFailureSignal(lastTurn.message) !== null) {
           break;
         }
 

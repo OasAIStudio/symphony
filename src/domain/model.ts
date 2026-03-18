@@ -136,6 +136,30 @@ export interface OrchestratorState {
   issueReworkCounts: Record<string, number>;
 }
 
+export const FAILURE_CLASSES = ["verify", "review", "spec", "infra"] as const;
+export type FailureClass = (typeof FAILURE_CLASSES)[number];
+
+export interface FailureSignal {
+  failureClass: FailureClass;
+}
+
+const STAGE_FAILED_REGEX = /\[STAGE_FAILED:\s*(verify|review|spec|infra)\s*\]/;
+
+/**
+ * Parse a `[STAGE_FAILED: class]` signal from agent output text.
+ * Returns the parsed failure signal or null if no signal is found.
+ */
+export function parseFailureSignal(text: string | null | undefined): FailureSignal | null {
+  if (text === null || text === undefined) {
+    return null;
+  }
+  const match = STAGE_FAILED_REGEX.exec(text);
+  if (match === null) {
+    return null;
+  }
+  return { failureClass: match[1] as FailureClass };
+}
+
 export function normalizeIssueState(state: string): string {
   return state.trim().toLowerCase();
 }

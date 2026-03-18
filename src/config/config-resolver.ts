@@ -13,6 +13,7 @@ import {
   DEFAULT_LINEAR_PAGE_SIZE,
   DEFAULT_MAX_CONCURRENT_AGENTS,
   DEFAULT_MAX_CONCURRENT_AGENTS_BY_STATE,
+  DEFAULT_MAX_RETRY_ATTEMPTS,
   DEFAULT_MAX_RETRY_BACKOFF_MS,
   DEFAULT_MAX_TURNS,
   DEFAULT_OBSERVABILITY_ENABLED,
@@ -103,6 +104,9 @@ export function resolveWorkflowConfig(
       maxRetryBackoffMs:
         readPositiveInteger(agent.max_retry_backoff_ms) ??
         DEFAULT_MAX_RETRY_BACKOFF_MS,
+      maxRetryAttempts:
+        readPositiveInteger(agent.max_retry_attempts) ??
+        DEFAULT_MAX_RETRY_ATTEMPTS,
       maxConcurrentAgentsByState: readStateConcurrencyMap(
         agent.max_concurrent_agents_by_state,
       ),
@@ -454,6 +458,15 @@ export function validateStagesConfig(
       } else if (!stageNames.has(stage.transitions.onComplete)) {
         errors.push(
           `Stage '${name}' on_complete references unknown stage '${stage.transitions.onComplete}'.`,
+        );
+      }
+
+      if (
+        stage.transitions.onRework !== null &&
+        !stageNames.has(stage.transitions.onRework)
+      ) {
+        errors.push(
+          `Stage '${name}' on_rework references unknown stage '${stage.transitions.onRework}'.`,
         );
       }
     }
