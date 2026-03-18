@@ -436,5 +436,6 @@ function createConfig(): ResolvedWorkflowConfig {
       model: null,
     },
     stages: null,
+    escalationState: null,
   };
 }

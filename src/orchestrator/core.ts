@@ -86,6 +86,7 @@ export interface OrchestratorCoreOptions {
     stage: StageDefinition;
   }) => Promise<EnsembleGateResult>;
   postComment?: (issueId: string, body: string) => Promise<void>;
+  updateIssueState?: (issueId: string, issueIdentifier: string, stateName: string) => Promise<void>;
   timerScheduler?: TimerScheduler;
   now?: () => Date;
 }
@@ -103,6 +104,8 @@ export class OrchestratorCore {
 
   private readonly postComment?: OrchestratorCoreOptions["postComment"];
 
+  private readonly updateIssueState?: OrchestratorCoreOptions["updateIssueState"];
+
   private readonly timerScheduler: TimerScheduler;
 
   private readonly now: () => Date;
@@ -116,6 +119,7 @@ export class OrchestratorCore {
     this.stopRunningIssue = options.stopRunningIssue;
     this.runEnsembleGate = options.runEnsembleGate;
     this.postComment = options.postComment;
+    this.updateIssueState = options.updateIssueState;
     this.timerScheduler = options.timerScheduler ?? defaultTimerScheduler();
     this.now = options.now ?? (() => new Date());
     this.state = createInitialOrchestratorState({
@@ -439,16 +443,25 @@ export class OrchestratorCore {
             error: `Ensemble review failed: ${result.comment.slice(0, 200)}`,
             delayType: "continuation",
           });
-        } else if (reworkTarget === "escalated" && this.postComment !== undefined) {
-          const maxRework = stage.type === "gate" ? (stage.maxRework ?? 0) : 0;
-          try {
-            await this.postComment(
-              issue.id,
-              `Ensemble review: max rework attempts (${maxRework}) exceeded. Escalating for manual review.`,
-            );
-          } catch (err) {
-            // Comment posting is best-effort — don't fail the gate on it.
-            console.warn(`[orchestrator] Failed to post escalation comment for ${issue.identifier}:`, err);
+        } else if (reworkTarget === "escalated") {
+          if (this.config.escalationState !== null && this.updateIssueState !== undefined) {
+            try {
+              await this.updateIssueState(issue.id, issue.identifier, this.config.escalationState);
+            } catch (err) {
+              console.warn(`[orchestrator] Failed to update escalation state for ${issue.identifier}:`, err);
+            }
+          }
+          if (this.postComment !== undefined) {
+            const maxRework = stage.type === "gate" ? (stage.maxRework ?? 0) : 0;
+            try {
+              await this.postComment(
+                issue.id,
+                `Ensemble review: max rework attempts (${maxRework}) exceeded. Escalating for manual review.`,
+              );
+            } catch (err) {
+              // Comment posting is best-effort — don't fail the gate on it.
+              console.warn(`[orchestrator] Failed to post escalation comment for ${issue.identifier}:`, err);
+            }
           }
         }
       }
@@ -626,6 +639,14 @@ export class OrchestratorCore {
         this.state.issueStages[issue.id] = stageName;
         this.state.claimed.add(issue.id);
 
+        if (stage.linearState !== null && this.updateIssueState !== undefined) {
+          try {
+            await this.updateIssueState(issue.id, issue.identifier, stage.linearState);
+          } catch (err) {
+            console.warn(`[orchestrator] Failed to update issue state for ${issue.identifier}:`, err);
+          }
+        }
+
         if (
           stage.gateType === "ensemble" &&
           this.runEnsembleGate !== undefined
@@ -639,6 +660,14 @@ export class OrchestratorCore {
 
       // Track the issue's current stage
       this.state.issueStages[issue.id] = stageName;
+
+      if (stage?.linearState !== null && stage?.linearState !== undefined && this.updateIssueState !== undefined) {
+        try {
+          await this.updateIssueState(issue.id, issue.identifier, stage.linearState);
+        } catch (err) {
+          console.warn(`[orchestrator] Failed to update issue state for ${issue.identifier}:`, err);
+        }
+      }
     }
 
     try {

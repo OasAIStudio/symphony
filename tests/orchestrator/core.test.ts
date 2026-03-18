@@ -596,6 +596,7 @@ function createConfig(overrides?: {
       model: null,
     },
     stages: null,
+    escalationState: null,
   };
 }
 

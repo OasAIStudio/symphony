@@ -170,6 +170,12 @@ export class OrchestratorRuntimeHost implements DashboardServerHost {
             postComment: async (issueId: string, body: string) => {
               await (this.tracker as LinearTrackerClient).postComment(issueId, body);
             },
+            updateIssueState: async (issueId: string, issueIdentifier: string, stateName: string) => {
+              const teamKey = issueIdentifier.split("-")[0] ?? issueIdentifier;
+              await (this.tracker as LinearTrackerClient).updateIssueState(
+                issueId, stateName, teamKey,
+              );
+            },
           }
         : {}),
       spawnWorker: async ({ issue, attempt, stage, stageName }) =>

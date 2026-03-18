@@ -803,6 +803,7 @@ function createGateStage(overrides?: {
       onApprove: "merge",
       onRework: "implement",
     },
+    linearState: null,
   };
 }
 
@@ -826,6 +827,7 @@ function createEnsembleWorkflowConfig() {
           onApprove: null,
           onRework: null,
         },
+        linearState: null,
       },
       review: {
         type: "gate" as const,
@@ -850,6 +852,7 @@ function createEnsembleWorkflowConfig() {
           onApprove: "merge",
           onRework: "implement",
         },
+        linearState: null,
       },
       merge: {
         type: "agent" as const,
@@ -867,6 +870,7 @@ function createEnsembleWorkflowConfig() {
           onApprove: null,
           onRework: null,
         },
+        linearState: null,
       },
       done: {
         type: "terminal" as const,
@@ -880,6 +884,7 @@ function createEnsembleWorkflowConfig() {
         maxRework: null,
         reviewers: [],
         transitions: { onComplete: null, onApprove: null, onRework: null },
+        linearState: null,
       },
     },
   };
@@ -959,5 +964,6 @@ function createConfig(overrides?: { stages?: ReturnType<typeof createEnsembleWor
       renderIntervalMs: 16,
     },
     stages: overrides?.stages ?? null,
+    escalationState: null,
   };
 }

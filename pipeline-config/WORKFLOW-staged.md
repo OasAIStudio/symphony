@@ -6,9 +6,13 @@ tracker:
   active_states:
     - Todo
     - In Progress
+    - In Review
+    - Blocked
   terminal_states:
     - Done
     - Cancelled
+
+escalation_state: Blocked
 
 polling:
   interval_ms: 30000
@@ -78,6 +82,7 @@ stages:
     runner: claude-code
     model: claude-sonnet-4-5
     max_turns: 8
+    linear_state: In Progress
     on_complete: implement
 
   implement:
@@ -91,6 +96,7 @@ stages:
     type: gate
     gate_type: ensemble
     max_rework: 3
+    linear_state: In Review
     reviewers:
       - runner: gemini
         model: gemini-2.5-pro

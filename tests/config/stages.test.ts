@@ -136,6 +136,36 @@ describe("resolveStagesConfig", () => {
     expect(result!.stages.investigate!.timeoutMs).toBe(60000);
   });
 
+  it("parses linear_state from stage definition", () => {
+    const result = resolveStagesConfig({
+      investigate: {
+        type: "agent",
+        linear_state: "In Progress",
+        on_complete: "done",
+      },
+      done: {
+        type: "terminal",
+      },
+    });
+
+    expect(result!.stages.investigate!.linearState).toBe("In Progress");
+  });
+
+  it("defaults linearState to null when not specified", () => {
+    const result = resolveStagesConfig({
+      implement: {
+        type: "agent",
+        on_complete: "done",
+      },
+      done: {
+        type: "terminal",
+      },
+    });
+
+    expect(result!.stages.implement!.linearState).toBeNull();
+    expect(result!.stages.done!.linearState).toBeNull();
+  });
+
   it("treats unrecognized gate_type as null", () => {
     const result = resolveStagesConfig({
       review: {
@@ -175,6 +205,7 @@ describe("validateStagesConfig", () => {
           maxRework: null,
           reviewers: [],
           transitions: { onComplete: "review", onApprove: null, onRework: null },
+          linearState: null,
         },
         review: {
           type: "gate",
@@ -192,6 +223,7 @@ describe("validateStagesConfig", () => {
             onApprove: "done",
             onRework: "investigate",
           },
+          linearState: null,
         },
         done: {
           type: "terminal",
@@ -205,6 +237,7 @@ describe("validateStagesConfig", () => {
           maxRework: null,
           reviewers: [],
           transitions: { onComplete: null, onApprove: null, onRework: null },
+          linearState: null,
         },
       },
     };
@@ -229,6 +262,7 @@ describe("validateStagesConfig", () => {
           maxRework: null,
           reviewers: [],
           transitions: { onComplete: "done", onApprove: null, onRework: null },
+          linearState: null,
         },
         done: {
           type: "terminal",
@@ -242,6 +276,7 @@ describe("validateStagesConfig", () => {
           maxRework: null,
           reviewers: [],
           transitions: { onComplete: null, onApprove: null, onRework: null },
+          linearState: null,
         },
       },
     };
@@ -268,6 +303,7 @@ describe("validateStagesConfig", () => {
           maxRework: null,
           reviewers: [],
           transitions: { onComplete: null, onApprove: null, onRework: null },
+          linearState: null,
         },
         done: {
           type: "terminal",
@@ -281,6 +317,7 @@ describe("validateStagesConfig", () => {
           maxRework: null,
           reviewers: [],
           transitions: { onComplete: null, onApprove: null, onRework: null },
+          linearState: null,
         },
       },
     };
@@ -307,6 +344,7 @@ describe("validateStagesConfig", () => {
           maxRework: null,
           reviewers: [],
           transitions: { onComplete: null, onApprove: null, onRework: null },
+          linearState: null,
         },
         done: {
           type: "terminal",
@@ -320,6 +358,7 @@ describe("validateStagesConfig", () => {
           maxRework: null,
           reviewers: [],
           transitions: { onComplete: null, onApprove: null, onRework: null },
+          linearState: null,
         },
       },
     };
@@ -350,6 +389,7 @@ describe("validateStagesConfig", () => {
             onApprove: null,
             onRework: null,
           },
+          linearState: null,
         },
         done: {
           type: "terminal",
@@ -363,6 +403,7 @@ describe("validateStagesConfig", () => {
           maxRework: null,
           reviewers: [],
           transitions: { onComplete: null, onApprove: null, onRework: null },
+          linearState: null,
         },
       },
     };
@@ -389,6 +430,7 @@ describe("validateStagesConfig", () => {
           maxRework: null,
           reviewers: [],
           transitions: { onComplete: "b", onApprove: null, onRework: null },
+          linearState: null,
         },
         b: {
           type: "agent",
@@ -402,6 +444,7 @@ describe("validateStagesConfig", () => {
           maxRework: null,
           reviewers: [],
           transitions: { onComplete: "a", onApprove: null, onRework: null },
+          linearState: null,
         },
       },
     };
@@ -428,6 +471,7 @@ describe("validateStagesConfig", () => {
           maxRework: null,
           reviewers: [],
           transitions: { onComplete: "done", onApprove: null, onRework: null },
+          linearState: null,
         },
         orphan: {
           type: "agent",
@@ -441,6 +485,7 @@ describe("validateStagesConfig", () => {
           maxRework: null,
           reviewers: [],
           transitions: { onComplete: "done", onApprove: null, onRework: null },
+          linearState: null,
         },
         done: {
           type: "terminal",
@@ -454,6 +499,7 @@ describe("validateStagesConfig", () => {
           maxRework: null,
           reviewers: [],
           transitions: { onComplete: null, onApprove: null, onRework: null },
+          linearState: null,
         },
       },
     };

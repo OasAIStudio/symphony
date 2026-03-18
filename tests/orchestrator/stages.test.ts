@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import type {
   ResolvedWorkflowConfig,
@@ -6,6 +6,7 @@ import type {
   StagesConfig,
 } from "../../src/config/types.js";
 import type { Issue } from "../../src/domain/model.js";
+import type { EnsembleGateResult } from "../../src/orchestrator/gate-handler.js";
 import {
   OrchestratorCore,
   type OrchestratorCoreOptions,
@@ -249,11 +250,155 @@ describe("orchestrator stage machine", () => {
   });
 });
 
+describe("updateIssueState integration", () => {
+  it("calls updateIssueState when dispatching an agent stage with linearState", async () => {
+    const updateIssueState = vi.fn().mockResolvedValue(undefined);
+    const stages = createThreeStageConfigWithLinearStates();
+
+    const orchestrator = createStagedOrchestrator({
+      stages,
+      updateIssueState,
+    });
+
+    await orchestrator.pollTick();
+
+    expect(updateIssueState).toHaveBeenCalledWith("1", "ISSUE-1", "In Progress");
+  });
+
+  it("does not call updateIssueState when stage has null linearState", async () => {
+    const updateIssueState = vi.fn().mockResolvedValue(undefined);
+
+    const orchestrator = createStagedOrchestrator({
+      stages: createThreeStageConfig(),
+      updateIssueState,
+    });
+
+    await orchestrator.pollTick();
+
+    expect(updateIssueState).not.toHaveBeenCalled();
+  });
+
+  it("calls updateIssueState when dispatching a gate stage with linearState", async () => {
+    const updateIssueState = vi.fn().mockResolvedValue(undefined);
+    const stages = createGateWorkflowConfigWithLinearStates();
+
+    const orchestrator = createStagedOrchestrator({
+      stages,
+      updateIssueState,
+    });
+
+    // First dispatch puts issue in "implement" (agent stage with linearState)
+    await orchestrator.pollTick();
+    expect(updateIssueState).toHaveBeenCalledWith("1", "ISSUE-1", "In Progress");
+
+    // Normal exit advances to "review" (gate stage)
+    orchestrator.onWorkerExit({ issueId: "1", outcome: "normal" });
+    expect(orchestrator.getState().issueStages["1"]).toBe("review");
+
+    // Retry timer fires — gate stage dispatch should call updateIssueState with "In Review"
+    const retryResult = await orchestrator.onRetryTimer("1");
+    expect(retryResult.dispatched).toBe(false);
+    expect(updateIssueState).toHaveBeenCalledWith("1", "ISSUE-1", "In Review");
+  });
+
+  it("calls updateIssueState on escalation when escalationState is configured", async () => {
+    const updateIssueState = vi.fn().mockResolvedValue(undefined);
+    const runEnsembleGate = vi.fn().mockResolvedValue({
+      aggregate: "fail",
+      results: [],
+      comment: "Code quality issues found.",
+    } satisfies EnsembleGateResult);
+
+    const base = createGateWorkflowConfigWithLinearStates();
+    const stages: StagesConfig = {
+      ...base,
+      stages: {
+        ...base.stages,
+        review: { ...base.stages.review!, maxRework: 0 },
+      },
+    };
+
+    const orchestrator = createStagedOrchestrator({
+      stages,
+      escalationState: "Blocked",
+      updateIssueState,
+      runEnsembleGate,
+    });
+
+    await orchestrator.pollTick();
+    orchestrator.onWorkerExit({ issueId: "1", outcome: "normal" });
+
+    // Retry timer fires — gate stage runs ensemble gate which fails → escalates
+    await orchestrator.onRetryTimer("1");
+    // Wait for the async handleEnsembleGate to complete
+    await new Promise((resolve) => setTimeout(resolve, 50));
+
+    expect(updateIssueState).toHaveBeenCalledWith("1", "ISSUE-1", "Blocked");
+  });
+
+  it("does not call updateIssueState on escalation when escalationState is null", async () => {
+    const updateIssueState = vi.fn().mockResolvedValue(undefined);
+    const runEnsembleGate = vi.fn().mockResolvedValue({
+      aggregate: "fail",
+      results: [],
+      comment: "Code quality issues found.",
+    } satisfies EnsembleGateResult);
+
+    const base = createGateWorkflowConfigWithLinearStates();
+    const stages: StagesConfig = {
+      ...base,
+      stages: {
+        ...base.stages,
+        review: { ...base.stages.review!, maxRework: 0 },
+      },
+    };
+
+    const orchestrator = createStagedOrchestrator({
+      stages,
+      escalationState: null,
+      updateIssueState,
+      runEnsembleGate,
+    });
+
+    await orchestrator.pollTick();
+    orchestrator.onWorkerExit({ issueId: "1", outcome: "normal" });
+
+    await orchestrator.onRetryTimer("1");
+    await new Promise((resolve) => setTimeout(resolve, 50));
+
+    // Only called for dispatch linearStates, not for escalation
+    const escalationCalls = updateIssueState.mock.calls.filter(
+      (call: unknown[]) => call[2] === "Blocked",
+    );
+    expect(escalationCalls).toHaveLength(0);
+  });
+
+  it("still dispatches successfully if updateIssueState throws", async () => {
+    const updateIssueState = vi.fn().mockRejectedValue(new Error("Linear API down"));
+
+    const orchestrator = createStagedOrchestrator({
+      stages: createThreeStageConfigWithLinearStates(),
+      updateIssueState,
+    });
+
+    const result = await orchestrator.pollTick();
+
+    // Dispatch should succeed despite updateIssueState failure
+    expect(result.dispatchedIssueIds).toEqual(["1"]);
+    expect(Object.keys(orchestrator.getState().running)).toEqual(["1"]);
+    expect(updateIssueState).toHaveBeenCalledWith("1", "ISSUE-1", "In Progress");
+  });
+});
+
 // --- Helpers ---
 
 function createStagedOrchestrator(overrides?: {
   stages?: StagesConfig | null;
   candidates?: Issue[];
+  escalationState?: string | null;
+  updateIssueState?: OrchestratorCoreOptions["updateIssueState"];
+  runEnsembleGate?: OrchestratorCoreOptions["runEnsembleGate"];
+  postComment?: OrchestratorCoreOptions["postComment"];
   onSpawn?: (input: {
     issue: Issue;
     attempt: number | null;
@@ -272,7 +417,7 @@ function createStagedOrchestrator(overrides?: {
   });
 
   const options: OrchestratorCoreOptions = {
-    config: createConfig({ stages }),
+    config: createConfig({ stages, ...(overrides?.escalationState !== undefined ? { escalationState: overrides.escalationState } : {}) }),
     tracker,
     spawnWorker: async (input) => {
       overrides?.onSpawn?.(input);
@@ -282,6 +427,9 @@ function createStagedOrchestrator(overrides?: {
       };
     },
     now: () => new Date("2026-03-06T00:00:05.000Z"),
+    ...(overrides?.updateIssueState !== undefined ? { updateIssueState: overrides.updateIssueState } : {}),
+    ...(overrides?.runEnsembleGate !== undefined ? { runEnsembleGate: overrides.runEnsembleGate } : {}),
+    ...(overrides?.postComment !== undefined ? { postComment: overrides.postComment } : {}),
   };
 
   return new OrchestratorCore(options);
@@ -307,6 +455,7 @@ function createThreeStageConfig(): StagesConfig {
           onApprove: null,
           onRework: null,
         },
+        linearState: null,
       },
       implement: {
         type: "agent",
@@ -324,6 +473,7 @@ function createThreeStageConfig(): StagesConfig {
           onApprove: null,
           onRework: null,
         },
+        linearState: null,
       },
       done: {
         type: "terminal",
@@ -337,6 +487,7 @@ function createThreeStageConfig(): StagesConfig {
         maxRework: null,
         reviewers: [],
         transitions: { onComplete: null, onApprove: null, onRework: null },
+        linearState: null,
       },
     },
   };
@@ -362,6 +513,7 @@ function createSimpleTwoStageConfig(): StagesConfig {
           onApprove: null,
           onRework: null,
         },
+        linearState: null,
       },
       done: {
         type: "terminal",
@@ -375,6 +527,141 @@ function createSimpleTwoStageConfig(): StagesConfig {
         maxRework: null,
         reviewers: [],
         transitions: { onComplete: null, onApprove: null, onRework: null },
+        linearState: null,
+      },
+    },
+  };
+}
+
+function createThreeStageConfigWithLinearStates(): StagesConfig {
+  return {
+    initialStage: "investigate",
+    stages: {
+      investigate: {
+        type: "agent",
+        runner: "claude-code",
+        model: "claude-opus-4",
+        prompt: "investigate.liquid",
+        maxTurns: 8,
+        timeoutMs: null,
+        concurrency: null,
+        gateType: null,
+        maxRework: null,
+        reviewers: [],
+        transitions: {
+          onComplete: "implement",
+          onApprove: null,
+          onRework: null,
+        },
+        linearState: "In Progress",
+      },
+      implement: {
+        type: "agent",
+        runner: "claude-code",
+        model: "claude-sonnet-4-5",
+        prompt: "implement.liquid",
+        maxTurns: 30,
+        timeoutMs: null,
+        concurrency: null,
+        gateType: null,
+        maxRework: null,
+        reviewers: [],
+        transitions: {
+          onComplete: "done",
+          onApprove: null,
+          onRework: null,
+        },
+        linearState: "In Progress",
+      },
+      done: {
+        type: "terminal",
+        runner: null,
+        model: null,
+        prompt: null,
+        maxTurns: null,
+        timeoutMs: null,
+        concurrency: null,
+        gateType: null,
+        maxRework: null,
+        reviewers: [],
+        transitions: { onComplete: null, onApprove: null, onRework: null },
+        linearState: null,
+      },
+    },
+  };
+}
+
+function createGateWorkflowConfigWithLinearStates(): StagesConfig {
+  return {
+    initialStage: "implement",
+    stages: {
+      implement: {
+        type: "agent",
+        runner: "claude-code",
+        model: "claude-sonnet-4-5",
+        prompt: "implement.liquid",
+        maxTurns: 30,
+        timeoutMs: null,
+        concurrency: null,
+        gateType: null,
+        maxRework: null,
+        reviewers: [],
+        transitions: {
+          onComplete: "review",
+          onApprove: null,
+          onRework: null,
+        },
+        linearState: "In Progress",
+      },
+      review: {
+        type: "gate",
+        runner: null,
+        model: null,
+        prompt: null,
+        maxTurns: null,
+        timeoutMs: null,
+        concurrency: null,
+        gateType: "ensemble",
+        maxRework: 3,
+        reviewers: [],
+        transitions: {
+          onComplete: null,
+          onApprove: "merge",
+          onRework: "implement",
+        },
+        linearState: "In Review",
+      },
+      merge: {
+        type: "agent",
+        runner: "claude-code",
+        model: "claude-sonnet-4-5",
+        prompt: "merge.liquid",
+        maxTurns: 5,
+        timeoutMs: null,
+        concurrency: null,
+        gateType: null,
+        maxRework: null,
+        reviewers: [],
+        transitions: {
+          onComplete: "done",
+          onApprove: null,
+          onRework: null,
+        },
+        linearState: null,
+      },
+      done: {
+        type: "terminal",
+        runner: null,
+        model: null,
+        prompt: null,
+        maxTurns: null,
+        timeoutMs: null,
+        concurrency: null,
+        gateType: null,
+        maxRework: null,
+        reviewers: [],
+        transitions: { onComplete: null, onApprove: null, onRework: null },
+        linearState: null,
       },
     },
   };
@@ -400,6 +687,7 @@ function createGateWorkflowConfig(): StagesConfig {
           onApprove: null,
           onRework: null,
         },
+        linearState: null,
       },
       review: {
         type: "gate",
@@ -417,6 +705,7 @@ function createGateWorkflowConfig(): StagesConfig {
           onApprove: "merge",
           onRework: "implement",
         },
+        linearState: null,
       },
       merge: {
         type: "agent",
@@ -434,6 +723,7 @@ function createGateWorkflowConfig(): StagesConfig {
           onApprove: null,
           onRework: null,
         },
+        linearState: null,
       },
       done: {
         type: "terminal",
@@ -447,6 +737,7 @@ function createGateWorkflowConfig(): StagesConfig {
         maxRework: null,
         reviewers: [],
         transitions: { onComplete: null, onApprove: null, onRework: null },
+        linearState: null,
       },
     },
   };
@@ -474,6 +765,7 @@ function createTracker(input?: {
 
 function createConfig(overrides?: {
   stages?: StagesConfig | null;
+  escalationState?: string | null;
 }): ResolvedWorkflowConfig {
   return {
     workflowPath: "/tmp/WORKFLOW.md",
@@ -527,6 +819,7 @@ function createConfig(overrides?: {
       renderIntervalMs: 16,
     },
     stages: overrides?.stages !== undefined ? overrides.stages : null,
+    escalationState: overrides?.escalationState ?? null,
   };
 }
 

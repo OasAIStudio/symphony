@@ -221,6 +221,28 @@ describe("config-resolver", () => {
     );
   });
 
+  it("parses escalation_state from top-level config", () => {
+    const resolved = resolveWorkflowConfig({
+      workflowPath: "/repo/WORKFLOW.md",
+      promptTemplate: "Prompt",
+      config: {
+        escalation_state: "Needs Triage",
+      },
+    });
+
+    expect(resolved.escalationState).toBe("Needs Triage");
+  });
+
+  it("defaults escalationState to null when not specified", () => {
+    const resolved = resolveWorkflowConfig({
+      workflowPath: "/repo/WORKFLOW.md",
+      promptTemplate: "Prompt",
+      config: {},
+    });
+
+    expect(resolved.escalationState).toBeNull();
+  });
+
   it("blocks dispatch when required tracker settings are missing", () => {
     const resolved = resolveWorkflowConfig(
       {

@@ -86,6 +86,7 @@ export interface StageDefinition {
   maxRework: number | null;
   reviewers: ReviewerDefinition[];
   transitions: StageTransitions;
+  linearState: string | null;
 }
 
 export interface StagesConfig {
@@ -106,6 +107,7 @@ export interface ResolvedWorkflowConfig {
   server: WorkflowServerConfig;
   observability: WorkflowObservabilityConfig;
   stages: StagesConfig | null;
+  escalationState: string | null;
 }
 
 export interface DispatchValidationFailure {

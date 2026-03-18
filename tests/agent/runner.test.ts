@@ -312,8 +312,8 @@ describe("AgentRunner", () => {
     config.stages = {
       initialStage: "investigate",
       stages: {
-        investigate: { type: "agent", runner: null, model: null, prompt: null, maxTurns: 3, timeoutMs: null, concurrency: null, gateType: null, maxRework: null, reviewers: [], transitions: { onComplete: "done", onApprove: null, onRework: null } },
-        done: { type: "terminal", runner: null, model: null, prompt: null, maxTurns: null, timeoutMs: null, concurrency: null, gateType: null, maxRework: null, reviewers: [], transitions: { onComplete: null, onApprove: null, onRework: null } },
+        investigate: { type: "agent", runner: null, model: null, prompt: null, maxTurns: 3, timeoutMs: null, concurrency: null, gateType: null, maxRework: null, reviewers: [], transitions: { onComplete: "done", onApprove: null, onRework: null }, linearState: null },
+        done: { type: "terminal", runner: null, model: null, prompt: null, maxTurns: null, timeoutMs: null, concurrency: null, gateType: null, maxRework: null, reviewers: [], transitions: { onComplete: null, onApprove: null, onRework: null }, linearState: null },
       },
     };
     const runner = new AgentRunner({
@@ -708,6 +708,7 @@ function createConfig(root: string, scenario: string): ResolvedWorkflowConfig {
       model: null,
     },
     stages: null,
+    escalationState: null,
   };
 }
 

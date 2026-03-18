@@ -273,6 +273,7 @@ function createConfig(
       model: null,
     },
     stages: null,
+    escalationState: null,
     ...overrides,
   };
 }

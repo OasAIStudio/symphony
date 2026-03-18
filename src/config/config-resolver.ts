@@ -138,6 +138,7 @@ export function resolveWorkflowConfig(
         DEFAULT_OBSERVABILITY_RENDER_INTERVAL_MS,
     },
     stages: resolveStagesConfig(config.stages),
+    escalationState: readString(config.escalation_state),
   };
 }
 
@@ -402,6 +403,7 @@ export function resolveStagesConfig(
         onApprove: readString(stageRecord.on_approve),
         onRework: readString(stageRecord.on_rework),
       },
+      linearState: readString(stageRecord.linear_state),
     };
   }
 
