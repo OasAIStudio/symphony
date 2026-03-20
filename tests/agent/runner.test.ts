@@ -154,6 +154,64 @@ describe("AgentRunner", () => {
     expect(prompts[1]).not.toContain("Initial prompt for ABC-123 attempt=2");
   });
 
+  it("emits promptChars and estimatedPromptTokens on agent events, with turn 1 larger than turn 2 for a long template", async () => {
+    const root = await createRoot();
+    const prompts: string[] = [];
+    const capturedEvents: Array<{ event: string; promptChars: number | undefined; estimatedPromptTokens: number | undefined; turnCount: number }> = [];
+    const tracker = createTracker({
+      refreshStates: [
+        { id: "issue-1", identifier: "ABC-123", state: "In Progress" },
+        { id: "issue-1", identifier: "ABC-123", state: "Human Review" },
+      ],
+    });
+    // Use a long template (>600 chars) so turn 1 prompt is larger than the continuation prompt
+    const longTemplate = `You are an expert software engineer working on the following issue.\n\nIssue: {{ issue.identifier }}\nTitle: {{ issue.title }}\nDescription: {{ issue.description }}\nState: {{ issue.state }}\nAttempt: {{ attempt }}\n\nInstructions:\n- Read the issue description carefully.\n- Implement all required changes.\n- Write tests for any new functionality.\n- Run the full test suite and fix any failures.\n- Follow the existing code style and conventions.\n- Write clear commit messages.\n- Open a pull request when done.\n- Do not modify unrelated code.\n- Do not skip tests.\n- Document any architectural decisions.\n`;
+    const runner = new AgentRunner({
+      config: { ...createConfig(root, "unused"), promptTemplate: longTemplate },
+      tracker,
+      onEvent: (event) => {
+        capturedEvents.push({
+          event: event.event,
+          promptChars: event.promptChars,
+          estimatedPromptTokens: event.estimatedPromptTokens,
+          turnCount: event.turnCount,
+        });
+      },
+      createCodexClient: (input) =>
+        createStubCodexClient(prompts, input, {
+          statuses: ["completed", "completed"],
+        }),
+    });
+
+    await runner.run({
+      issue: ISSUE_FIXTURE,
+      attempt: null,
+    });
+
+    expect(prompts).toHaveLength(2);
+
+    // Events for turn 1 should carry turn 1 prompt metrics
+    const turn1Events = capturedEvents.filter((e) => e.turnCount === 1);
+    expect(turn1Events.length).toBeGreaterThan(0);
+    const turn1PromptChars = turn1Events[0]?.promptChars;
+    expect(turn1PromptChars).toBe(prompts[0]?.length);
+    expect(turn1Events[0]?.estimatedPromptTokens).toBe(
+      Math.ceil((turn1PromptChars ?? 0) / 4),
+    );
+
+    // Events for turn 2 should carry turn 2 prompt metrics
+    const turn2Events = capturedEvents.filter((e) => e.turnCount === 2);
+    expect(turn2Events.length).toBeGreaterThan(0);
+    const turn2PromptChars = turn2Events[0]?.promptChars;
+    expect(turn2PromptChars).toBe(prompts[1]?.length);
+    expect(turn2Events[0]?.estimatedPromptTokens).toBe(
+      Math.ceil((turn2PromptChars ?? 0) / 4),
+    );
+
+    // Turn 1 (full WORKFLOW template) should be larger than turn 2 (continuation)
+    expect(turn1PromptChars).toBeGreaterThan(turn2PromptChars ?? 0);
+  });
+
   it("fails immediately when before_run fails and still invokes after_run best-effort", async () => {
     const root = await createRoot();
     const hooks = {

@@ -37,6 +37,8 @@ export interface AgentRunnerEvent extends CodexClientEvent {
   attempt: number | null;
   workspacePath: string;
   turnCount: number;
+  promptChars?: number;
+  estimatedPromptTokens?: number;
 }
 
 export interface AgentRunnerCodexClient {
@@ -223,6 +225,8 @@ export class AgentRunner {
       });
 
       runAttempt.status = "launching_agent_process";
+      let currentPromptChars = 0;
+      let currentEstimatedPromptTokens = 0;
       const effectiveClientFactory = isAiSdkRunner(effectiveRunnerKind)
         ? (factoryInput: AgentRunnerCodexClientFactoryInput) =>
             createRunnerFromConfig({
@@ -250,6 +254,8 @@ export class AgentRunner {
             attempt: input.attempt,
             workspacePath,
             turnCount: liveSession.turnCount,
+            promptChars: currentPromptChars,
+            estimatedPromptTokens: currentEstimatedPromptTokens,
           });
         },
       });
@@ -278,6 +284,8 @@ export class AgentRunner {
           turnNumber,
           maxTurns: effectiveMaxTurns,
         });
+        currentPromptChars = prompt.length;
+        currentEstimatedPromptTokens = Math.ceil(prompt.length / 4);
         const title = `${issue.identifier}: ${issue.title}`;
 
         runAttempt.status =

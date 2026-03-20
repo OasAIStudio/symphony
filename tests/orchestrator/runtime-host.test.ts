@@ -283,6 +283,58 @@ describe("OrchestratorRuntimeHost", () => {
     );
   });
 
+  it("logs turn_number, prompt_chars, and estimated_prompt_tokens for turn_completed events", async () => {
+    const tracker = createTracker();
+    const fakeRunner = new FakeAgentRunner();
+    const entries: StructuredLogEntry[] = [];
+    const logger = new StructuredLogger([
+      {
+        write(entry) {
+          entries.push(entry);
+        },
+      },
+    ]);
+    const host = new OrchestratorRuntimeHost({
+      config: createConfig(),
+      tracker,
+      logger,
+      createAgentRunner: ({ onEvent }) => {
+        fakeRunner.onEvent = onEvent;
+        return fakeRunner;
+      },
+      now: () => new Date("2026-03-06T00:00:05.000Z"),
+    });
+
+    await host.pollOnce();
+    fakeRunner.emit("1", {
+      event: "turn_completed",
+      timestamp: "2026-03-06T00:00:02.000Z",
+      codexAppServerPid: "1001",
+      sessionId: "thread-1-turn-1",
+      threadId: "thread-1",
+      turnId: "turn-1",
+      turnCount: 1,
+      promptChars: 1200,
+      estimatedPromptTokens: 300,
+      usage: {
+        inputTokens: 100,
+        outputTokens: 50,
+        totalTokens: 150,
+      },
+      message: "turn done",
+    });
+    await host.flushEvents();
+
+    const turnCompletedEntry = entries.find((e) => e.event === "turn_completed");
+    expect(turnCompletedEntry).toBeDefined();
+    expect(turnCompletedEntry).toMatchObject({
+      event: "turn_completed",
+      turn_number: 1,
+      prompt_chars: 1200,
+      estimated_prompt_tokens: 300,
+    });
+  });
+
   it("emits stage_completed event on normal worker exit with token and turn fields", async () => {
     const tracker = createTracker();
     const fakeRunner = new FakeAgentRunner();

@@ -1044,8 +1044,15 @@ async function logAgentEvent(
     session_id: event.sessionId ?? null,
     thread_id: event.threadId ?? null,
     turn_id: event.turnId ?? null,
+    turn_number: event.turnCount,
     attempt: event.attempt,
     workspace_path: event.workspacePath,
+    ...(event.promptChars !== undefined
+      ? { prompt_chars: event.promptChars }
+      : {}),
+    ...(event.estimatedPromptTokens !== undefined
+      ? { estimated_prompt_tokens: event.estimatedPromptTokens }
+      : {}),
     ...(event.usage === undefined
       ? {}
       : {
