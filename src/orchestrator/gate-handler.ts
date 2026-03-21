@@ -373,6 +373,28 @@ export function parseReviewerOutput(
 }
 
 /**
+ * Format a review findings comment for posting to the issue tracker when an
+ * agent-type stage reports a review failure. Follows the formatGateComment()
+ * markdown style.
+ */
+export function formatReviewFindingsComment(
+  issueIdentifier: string,
+  stageName: string,
+  agentMessage: string,
+): string {
+  const sections = [
+    "## Review Findings",
+    "",
+    `**Stage:** ${stageName}`,
+    `**Issue:** ${issueIdentifier}`,
+  ];
+  if (agentMessage.trim() !== "") {
+    sections.push("", agentMessage);
+  }
+  return sections.join("\n");
+}
+
+/**
  * Format the aggregate gate result as a markdown comment for Linear.
  */
 export function formatGateComment(

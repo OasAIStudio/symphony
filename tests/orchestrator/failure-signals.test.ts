@@ -748,6 +748,216 @@ describe("review findings comment posting on agent review failure", () => {
 
     expect(postComment).toHaveBeenCalled();
   });
+
+  it("review findings comment failure does not block rework", async () => {
+    const postComment = vi.fn().mockRejectedValue(new Error("network error"));
+
+    const orchestrator = createStagedOrchestrator({
+      stages: createAgentReviewWorkflowConfig(),
+      postComment,
+    });
+
+    await orchestrator.pollTick();
+
+    // Advance to review stage
+    orchestrator.onWorkerExit({ issueId: "1", outcome: "normal" });
+    await orchestrator.onRetryTimer("1");
+
+    // Review agent reports failure — comment will fail to post
+    const retryEntry = orchestrator.onWorkerExit({
+      issueId: "1",
+      outcome: "normal",
+      agentMessage: "[STAGE_FAILED: review]",
+    });
+
+    // Rework must proceed regardless of comment failure
+    expect(orchestrator.getState().issueStages["1"]).toBe("implement");
+    expect(retryEntry).not.toBeNull();
+    expect(retryEntry!.error).toBe("agent review failure: rework to implement");
+
+    // Allow async side effects to fire (and fail silently)
+    await new Promise((resolve) => setTimeout(resolve, 10));
+
+    expect(postComment).toHaveBeenCalled();
+  });
+
+  it("postComment error is swallowed for review findings", async () => {
+    const postComment = vi.fn().mockRejectedValue(new Error("timeout"));
+
+    const orchestrator = createStagedOrchestrator({
+      stages: createAgentReviewWorkflowConfig(),
+      postComment,
+    });
+
+    await orchestrator.pollTick();
+
+    // Advance to review stage
+    orchestrator.onWorkerExit({ issueId: "1", outcome: "normal" });
+    await orchestrator.onRetryTimer("1");
+
+    // Review fails — postComment will throw
+    let thrownError: unknown = null;
+    try {
+      orchestrator.onWorkerExit({
+        issueId: "1",
+        outcome: "normal",
+        agentMessage: "[STAGE_FAILED: review]",
+      });
+    } catch (err) {
+      thrownError = err;
+    }
+
+    // Error must not propagate to caller
+    expect(thrownError).toBeNull();
+
+    // Allow async side effects to settle
+    await new Promise((resolve) => setTimeout(resolve, 10));
+
+    // postComment was called but the error was swallowed
+    expect(postComment).toHaveBeenCalled();
+  });
+
+  it("skips review findings when postComment not configured", async () => {
+    // No postComment wired — orchestrator created without it
+    const orchestrator = createStagedOrchestrator({
+      stages: createAgentReviewWorkflowConfig(),
+    });
+
+    await orchestrator.pollTick();
+
+    // Advance to review stage
+    orchestrator.onWorkerExit({ issueId: "1", outcome: "normal" });
+    await orchestrator.onRetryTimer("1");
+
+    // Review agent reports failure — no postComment configured
+    const retryEntry = orchestrator.onWorkerExit({
+      issueId: "1",
+      outcome: "normal",
+      agentMessage: "[STAGE_FAILED: review]",
+    });
+
+    // Rework should still proceed
+    expect(orchestrator.getState().issueStages["1"]).toBe("implement");
+    expect(retryEntry).not.toBeNull();
+    expect(retryEntry!.error).toBe("agent review failure: rework to implement");
+  });
+
+  it("escalation fires on max rework exceeded", async () => {
+    const base = createAgentReviewWorkflowConfig();
+    const stages: StagesConfig = {
+      ...base,
+      stages: {
+        ...base.stages,
+        review: { ...base.stages.review!, maxRework: 1 },
+      },
+    };
+
+    const updateIssueState = vi.fn().mockResolvedValue(undefined);
+    const postComment = vi.fn().mockResolvedValue(undefined);
+
+    const orchestrator = createStagedOrchestrator({
+      stages,
+      escalationState: "Blocked",
+      updateIssueState,
+      postComment,
+    });
+
+    await orchestrator.pollTick();
+
+    // Advance to review
+    orchestrator.onWorkerExit({ issueId: "1", outcome: "normal" });
+    await orchestrator.onRetryTimer("1");
+
+    // First review failure — rework (count 1 of max 1)
+    orchestrator.onWorkerExit({
+      issueId: "1",
+      outcome: "normal",
+      agentMessage: "[STAGE_FAILED: review]",
+    });
+    await orchestrator.onRetryTimer("1");
+    orchestrator.onWorkerExit({ issueId: "1", outcome: "normal" });
+    await orchestrator.onRetryTimer("1");
+
+    // Second review failure — should escalate
+    const retryEntry = orchestrator.onWorkerExit({
+      issueId: "1",
+      outcome: "normal",
+      agentMessage: "[STAGE_FAILED: review]",
+    });
+
+    expect(retryEntry).toBeNull();
+    expect(orchestrator.getState().completed.has("1")).toBe(true);
+
+    // Allow async side effects to fire
+    await new Promise((resolve) => setTimeout(resolve, 10));
+
+    expect(updateIssueState).toHaveBeenCalledWith("1", "ISSUE-1", "Blocked");
+    expect(postComment).toHaveBeenCalledWith(
+      "1",
+      expect.stringContaining("max rework"),
+    );
+  });
+
+  it("no review findings on escalation", async () => {
+    const base = createAgentReviewWorkflowConfig();
+    const stages: StagesConfig = {
+      ...base,
+      stages: {
+        ...base.stages,
+        review: { ...base.stages.review!, maxRework: 1 },
+      },
+    };
+
+    const postComment = vi.fn().mockResolvedValue(undefined);
+
+    const orchestrator = createStagedOrchestrator({
+      stages,
+      escalationState: "Blocked",
+      postComment,
+    });
+
+    await orchestrator.pollTick();
+
+    // Advance to review
+    orchestrator.onWorkerExit({ issueId: "1", outcome: "normal" });
+    await orchestrator.onRetryTimer("1");
+
+    // First review failure — rework
+    orchestrator.onWorkerExit({
+      issueId: "1",
+      outcome: "normal",
+      agentMessage: "[STAGE_FAILED: review]",
+    });
+
+    // Allow the review findings comment to fire for the first failure
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    postComment.mockClear();
+
+    await orchestrator.onRetryTimer("1");
+    orchestrator.onWorkerExit({ issueId: "1", outcome: "normal" });
+    await orchestrator.onRetryTimer("1");
+
+    // Second review failure — escalation (max exceeded)
+    orchestrator.onWorkerExit({
+      issueId: "1",
+      outcome: "normal",
+      agentMessage: "[STAGE_FAILED: review]",
+    });
+
+    // Allow async side effects to fire
+    await new Promise((resolve) => setTimeout(resolve, 10));
+
+    // Only the escalation comment should have been posted — not a review findings comment
+    expect(postComment).toHaveBeenCalledTimes(1);
+    expect(postComment).toHaveBeenCalledWith(
+      "1",
+      expect.stringContaining("max rework"),
+    );
+    expect(postComment).not.toHaveBeenCalledWith(
+      "1",
+      expect.stringContaining("## Review Findings"),
+    );
+  });
 });
 
 // --- Helpers ---

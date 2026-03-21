@@ -16,6 +16,7 @@ import {
   type ReviewerResult,
   aggregateVerdicts,
   formatGateComment,
+  formatReviewFindingsComment,
   parseReviewerOutput,
   runEnsembleGate,
 } from "../../src/orchestrator/gate-handler.js";
@@ -183,6 +184,44 @@ describe("formatGateComment", () => {
     expect(comment).toContain("security-reviewer");
     expect(comment).toContain("FAIL");
     expect(comment).toContain("Found XSS vulnerability");
+  });
+});
+
+describe("formatReviewFindingsComment", () => {
+  it("starts with ## Review Findings header", () => {
+    const comment = formatReviewFindingsComment(
+      "ISSUE-42",
+      "review",
+      "Some message",
+    );
+    expect(comment.startsWith("## Review Findings")).toBe(true);
+  });
+
+  it("includes the stage name and issue identifier", () => {
+    const comment = formatReviewFindingsComment(
+      "ISSUE-42",
+      "review",
+      "Some message",
+    );
+    expect(comment).toContain("review");
+    expect(comment).toContain("ISSUE-42");
+  });
+
+  it("includes the agent message when provided", () => {
+    const comment = formatReviewFindingsComment(
+      "ISSUE-1",
+      "review",
+      "Missing null check in handler.ts line 42",
+    );
+    expect(comment).toContain("Missing null check in handler.ts line 42");
+  });
+
+  it("omits the message body when agentMessage is empty", () => {
+    const comment = formatReviewFindingsComment("ISSUE-1", "review", "");
+    expect(comment).toContain("## Review Findings");
+    expect(comment).toContain("review");
+    // Should not have extra blank lines from empty message
+    expect(comment.split("\n").filter(Boolean).length).toBeLessThan(5);
   });
 });
 

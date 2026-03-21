@@ -21,7 +21,10 @@ import {
   applyCodexEventToOrchestratorState,
 } from "../logging/session-metrics.js";
 import type { IssueStateSnapshot, IssueTracker } from "../tracker/tracker.js";
-import type { EnsembleGateResult } from "./gate-handler.js";
+import {
+  type EnsembleGateResult,
+  formatReviewFindingsComment,
+} from "./gate-handler.js";
 
 const CONTINUATION_RETRY_DELAY_MS = 1_000;
 const FAILURE_RETRY_BASE_DELAY_MS = 10_000;
@@ -557,25 +560,6 @@ export class OrchestratorCore {
   }
 
   /**
-   * Format a review findings comment for posting to the issue tracker.
-   * Follows the `formatGateComment()` markdown style.
-   */
-  private formatReviewFindingsComment(
-    failureClass: string,
-    agentMessage: string | undefined,
-  ): string {
-    const sections = [
-      "## Review Findings",
-      "",
-      `**Failure class:** ${failureClass}`,
-    ];
-    if (agentMessage !== undefined && agentMessage.trim() !== "") {
-      sections.push("", agentMessage);
-    }
-    return sections.join("\n");
-  }
-
-  /**
    * Handle review failure: find the downstream gate and use its rework target.
    * Falls back to retry if no gate or rework target is found.
    * Posts a review findings comment before triggering rework.
@@ -633,6 +617,7 @@ export class OrchestratorCore {
         this.postReviewFindingsComment(
           issueId,
           runningEntry.identifier,
+          currentStageName,
           agentMessage,
         );
         return this.scheduleRetry(issueId, 1, {
@@ -699,6 +684,7 @@ export class OrchestratorCore {
     this.postReviewFindingsComment(
       issueId,
       runningEntry.identifier,
+      currentStageName,
       agentMessage,
     );
     return this.scheduleRetry(issueId, 1, {
@@ -715,12 +701,17 @@ export class OrchestratorCore {
   private postReviewFindingsComment(
     issueId: string,
     issueIdentifier: string,
+    stageName: string,
     agentMessage: string | undefined,
   ): void {
     if (this.postComment === undefined) {
       return;
     }
-    const comment = this.formatReviewFindingsComment("review", agentMessage);
+    const comment = formatReviewFindingsComment(
+      issueIdentifier,
+      stageName,
+      agentMessage ?? "",
+    );
     void this.postComment(issueId, comment).catch((err) => {
       console.warn(
         `[orchestrator] Failed to post review findings comment for ${issueIdentifier}:`,
