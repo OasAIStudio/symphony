@@ -563,6 +563,65 @@ describe("runtime snapshot", () => {
     expect(row.tokens.reasoning_tokens).toBe(1_000);
   });
 
+  it("includes first_dispatched_at from issueFirstDispatchedAt when set", () => {
+    const state = createInitialOrchestratorState({
+      pollIntervalMs: 30_000,
+      maxConcurrentAgents: 2,
+    });
+    state.running["issue-1"] = createRunningEntry({
+      issueId: "issue-1",
+      identifier: "ABC-1",
+      startedAt: "2026-03-06T10:00:00.000Z",
+      sessionId: "thread-a-turn-1",
+      lastCodexEvent: "turn_completed",
+      lastCodexTimestamp: "2026-03-06T10:00:05.000Z",
+      lastCodexMessage: "Working",
+      turnCount: 1,
+      codexInputTokens: 10,
+      codexOutputTokens: 5,
+      codexTotalTokens: 15,
+    });
+    state.issueFirstDispatchedAt["issue-1"] = "2026-01-15T08:00:00.000Z";
+
+    const snapshot = buildRuntimeSnapshot(state, {
+      now: new Date("2026-03-06T10:00:10.000Z"),
+    });
+
+    expect(snapshot.running).toHaveLength(1);
+    expect(snapshot.running[0]!.first_dispatched_at).toBe(
+      "2026-01-15T08:00:00.000Z",
+    );
+  });
+
+  it("falls back to startedAt for first_dispatched_at when issueFirstDispatchedAt is not set", () => {
+    const state = createInitialOrchestratorState({
+      pollIntervalMs: 30_000,
+      maxConcurrentAgents: 2,
+    });
+    state.running["issue-1"] = createRunningEntry({
+      issueId: "issue-1",
+      identifier: "ABC-1",
+      startedAt: "2026-03-06T10:00:00.000Z",
+      sessionId: "thread-a-turn-1",
+      lastCodexEvent: "turn_completed",
+      lastCodexTimestamp: "2026-03-06T10:00:05.000Z",
+      lastCodexMessage: "Working",
+      turnCount: 1,
+      codexInputTokens: 10,
+      codexOutputTokens: 5,
+      codexTotalTokens: 15,
+    });
+
+    const snapshot = buildRuntimeSnapshot(state, {
+      now: new Date("2026-03-06T10:00:10.000Z"),
+    });
+
+    expect(snapshot.running).toHaveLength(1);
+    expect(snapshot.running[0]!.first_dispatched_at).toBe(
+      "2026-03-06T10:00:00.000Z",
+    );
+  });
+
   it("returns zero total_pipeline_tokens and empty execution_history when no history exists", () => {
     const state = createInitialOrchestratorState({
       pollIntervalMs: 30_000,
