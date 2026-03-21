@@ -162,4 +162,6 @@ echo "  Workflow: $WORKFLOW"
 echo "  Repo URL: $REPO_URL"
 echo ""
 
-exec node "$SCRIPT_DIR/dist/src/cli/main.js" "$WORKFLOW_PATH" --acknowledge-high-trust-preview "$@"
+LOGS_DIR="/tmp/symphony-logs-${PRODUCT}"
+mkdir -p "$LOGS_DIR"
+exec node "$SCRIPT_DIR/dist/src/cli/main.js" "$WORKFLOW_PATH" --acknowledge-high-trust-preview --logs-root "$LOGS_DIR" "$@"
