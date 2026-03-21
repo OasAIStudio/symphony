@@ -72,7 +72,7 @@ hooks:
 
     # --- Create worktree for this issue ---
     echo "Creating worktree for $ISSUE_KEY on branch $BRANCH_NAME..."
-    git -C "$BARE_CLONE" worktree add "$WORKSPACE_DIR" -b "$BRANCH_NAME" origin/main
+    git -C "$BARE_CLONE" worktree add "$WORKSPACE_DIR" -b "$BRANCH_NAME" main
 
     # --- Install dependencies ---
     if [ -f package.json ]; then
@@ -140,7 +140,14 @@ hooks:
     if [ "$CURRENT_BRANCH" = "main" ] || [ "$CURRENT_BRANCH" = "master" ]; then
       echo "On $CURRENT_BRANCH — rebasing onto latest..."
       wait_for_git_lock
-      if ! git rebase "origin/$CURRENT_BRANCH" 2>/dev/null; then
+      # In bare clone worktrees, refs are stored as refs/heads/<branch>, not refs/remotes/origin/<branch>
+      # Try origin/<branch> first (regular clone), fall back to <branch> (bare clone worktree)
+      if git show-ref --verify --quiet "refs/remotes/origin/$CURRENT_BRANCH"; then
+        REBASE_TARGET="origin/$CURRENT_BRANCH"
+      else
+        REBASE_TARGET="$CURRENT_BRANCH"
+      fi
+      if ! git rebase "$REBASE_TARGET" 2>/dev/null; then
         echo "WARNING: Rebase failed, aborting rebase" >&2
         git rebase --abort 2>/dev/null || true
       fi
