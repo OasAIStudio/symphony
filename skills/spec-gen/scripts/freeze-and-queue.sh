@@ -48,6 +48,58 @@ if [[ ! -f "$WORKFLOW_PATH" ]]; then
   exit 1
 fi
 
+# ── Linear CLI helpers ───────────────────────────────────────────────────────
+# All Linear operations use linear-cli, which handles auth (OAuth or API key).
+# Pass --api-key via LINEAR_API_KEY env var if needed (linear-cli reads it).
+
+LINEAR_CLI="linear-cli"
+
+# ── Resolve team from project ────────────────────────────────────────────────
+
+resolve_team_from_project() {
+  # Single GraphQL query to resolve both project ID and team info from slugId
+  local project_json
+  project_json=$($LINEAR_CLI api query -o json --quiet --compact \
+    -v "slug=$PROJECT_SLUG" \
+    'query($slug: String!) { projects(filter: { slugId: { eq: $slug } }) { nodes { id teams { nodes { id key } } } } }' 2>/dev/null)
+
+  PROJECT_ID=$(echo "$project_json" | jq -r '.data.projects.nodes[0].id // empty')
+  if [[ -z "$PROJECT_ID" ]]; then
+    echo "ERROR: Could not find project with slugId: $PROJECT_SLUG" >&2
+    echo "  Ensure the project exists and linear-cli is authenticated." >&2
+    exit 1
+  fi
+  echo "Project ID: $PROJECT_ID"
+
+  TEAM_ID=$(echo "$project_json" | jq -r '.data.projects.nodes[0].teams.nodes[0].id // empty')
+  TEAM_KEY=$(echo "$project_json" | jq -r '.data.projects.nodes[0].teams.nodes[0].key // empty')
+
+  if [[ -z "$TEAM_ID" ]]; then
+    echo "ERROR: Could not resolve team from project: $PROJECT_ID" >&2
+    echo "  API response: $project_json" >&2
+    exit 1
+  fi
+  echo "Resolved team: $TEAM_KEY (ID: $TEAM_ID)"
+}
+
+# ── Resolve workflow state IDs for the team ──────────────────────────────────
+# Globals populated by resolve_all_states():
+DRAFT_STATE_ID=""
+TODO_STATE_ID=""
+BACKLOG_STATE_ID=""
+
+resolve_all_states() {
+  # Single workflowStates GraphQL query to batch-resolve all needed state IDs
+  local states_json
+  states_json=$($LINEAR_CLI api query -o json --quiet --compact \
+    -v "teamId=$TEAM_ID" \
+    'query($teamId: ID!) { workflowStates(filter: { team: { id: { eq: $teamId } } }) { nodes { id name } } }' 2>/dev/null)
+
+  DRAFT_STATE_ID=$(echo "$states_json" | jq -r '.data.workflowStates.nodes[] | select(.name == "Draft") | .id' | head -1)
+  TODO_STATE_ID=$(echo "$states_json" | jq -r '.data.workflowStates.nodes[] | select(.name == "Todo") | .id' | head -1)
+  BACKLOG_STATE_ID=$(echo "$states_json" | jq -r '.data.workflowStates.nodes[] | select(.name == "Backlog") | .id' | head -1)
+}
+
 # ── Post-creation verification ────────────────────────────────────────────────
 # Queries an issue by ID and confirms project.slugId and (for sub-issues) parent.id
 # match expected values. Logs warnings on mismatch; never exits.
@@ -130,7 +182,6 @@ if [[ "$TRIVIAL" == true ]]; then
   fi
 
   # Resolve team from project
-  LINEAR_CLI="linear-cli"
   resolve_team_from_project
 
   # Resolve all states in one batch query
@@ -251,58 +302,6 @@ echo "Project slug: $PROJECT_SLUG"
 echo "Dry run: $DRY_RUN"
 echo "Parent only: $PARENT_ONLY"
 [[ -n "$UPDATE_ISSUE_ID" ]] && echo "Update mode: $UPDATE_ISSUE_ID"
-
-# ── Linear CLI helpers ───────────────────────────────────────────────────────
-# All Linear operations use linear-cli, which handles auth (OAuth or API key).
-# Pass --api-key via LINEAR_API_KEY env var if needed (linear-cli reads it).
-
-LINEAR_CLI="linear-cli"
-
-# ── Resolve team from project ────────────────────────────────────────────────
-
-resolve_team_from_project() {
-  # Single GraphQL query to resolve both project ID and team info from slugId
-  local project_json
-  project_json=$($LINEAR_CLI api query -o json --quiet --compact \
-    -v "slug=$PROJECT_SLUG" \
-    'query($slug: String!) { projects(filter: { slugId: { eq: $slug } }) { nodes { id teams { nodes { id key } } } } }' 2>/dev/null)
-
-  PROJECT_ID=$(echo "$project_json" | jq -r '.data.projects.nodes[0].id // empty')
-  if [[ -z "$PROJECT_ID" ]]; then
-    echo "ERROR: Could not find project with slugId: $PROJECT_SLUG" >&2
-    echo "  Ensure the project exists and linear-cli is authenticated." >&2
-    exit 1
-  fi
-  echo "Project ID: $PROJECT_ID"
-
-  TEAM_ID=$(echo "$project_json" | jq -r '.data.projects.nodes[0].teams.nodes[0].id // empty')
-  TEAM_KEY=$(echo "$project_json" | jq -r '.data.projects.nodes[0].teams.nodes[0].key // empty')
-
-  if [[ -z "$TEAM_ID" ]]; then
-    echo "ERROR: Could not resolve team from project: $PROJECT_ID" >&2
-    echo "  API response: $project_json" >&2
-    exit 1
-  fi
-  echo "Resolved team: $TEAM_KEY (ID: $TEAM_ID)"
-}
-
-# ── Resolve workflow state IDs for the team ──────────────────────────────────
-# Globals populated by resolve_all_states():
-DRAFT_STATE_ID=""
-TODO_STATE_ID=""
-BACKLOG_STATE_ID=""
-
-resolve_all_states() {
-  # Single workflowStates GraphQL query to batch-resolve all needed state IDs
-  local states_json
-  states_json=$($LINEAR_CLI api query -o json --quiet --compact \
-    -v "teamId=$TEAM_ID" \
-    'query($teamId: ID!) { workflowStates(filter: { team: { id: { eq: $teamId } } }) { nodes { id name } } }' 2>/dev/null)
-
-  DRAFT_STATE_ID=$(echo "$states_json" | jq -r '.data.workflowStates.nodes[] | select(.name == "Draft") | .id' | head -1)
-  TODO_STATE_ID=$(echo "$states_json" | jq -r '.data.workflowStates.nodes[] | select(.name == "Todo") | .id' | head -1)
-  BACKLOG_STATE_ID=$(echo "$states_json" | jq -r '.data.workflowStates.nodes[] | select(.name == "Backlog") | .id' | head -1)
-}
 
 # ── Parse tasks from spec content ────────────────────────────────────────────
 
@@ -649,11 +648,8 @@ echo "Todo state: ${TODO_STATE_NAME:-<default>} (ID: ${TODO_STATE_ID:-<default>}
 
 # ── Create or update parent issue ────────────────────────────────────────────
 
-# Write spec content to temp file for stdin piping (avoids arg length limits)
-SPEC_TMPFILE=$(mktemp)
 GQL_TMPFILE=""
-trap 'rm -f "$SPEC_TMPFILE" ${GQL_TMPFILE:+"$GQL_TMPFILE"}' EXIT
-echo "$SPEC_CONTENT" > "$SPEC_TMPFILE"
+trap 'rm -f ${GQL_TMPFILE:+"$GQL_TMPFILE"}' EXIT
 
 if [[ -n "$UPDATE_ISSUE_ID" ]]; then
   echo ""
@@ -677,7 +673,7 @@ GQLEOF
     result=$($LINEAR_CLI api query -o json --quiet --compact \
       -v "issueId=$UPDATE_ISSUE_ID" \
       -v "title=[Spec] $SPEC_TITLE" \
-      -v "description=$(cat "$SPEC_TMPFILE")" \
+      -v "description=$SPEC_CONTENT" \
       -v "stateId=$DRAFT_STATE_ID" \
       - < "$GQL_TMPFILE" 2>&1)
   else
@@ -695,7 +691,7 @@ GQLEOF
     result=$($LINEAR_CLI api query -o json --quiet --compact \
       -v "issueId=$UPDATE_ISSUE_ID" \
       -v "title=[Spec] $SPEC_TITLE" \
-      -v "description=$(cat "$SPEC_TMPFILE")" \
+      -v "description=$SPEC_CONTENT" \
       - < "$GQL_TMPFILE" 2>&1)
   fi
   rm -f "$GQL_TMPFILE"; GQL_TMPFILE=""
@@ -738,7 +734,7 @@ mutation($title: String!, $description: String!, $teamId: String!, $projectId: S
 GQLEOF
     result=$($LINEAR_CLI api query -o json --quiet --compact \
       -v "title=[Spec] $SPEC_TITLE" \
-      -v "description=$(cat "$SPEC_TMPFILE")" \
+      -v "description=$SPEC_CONTENT" \
       -v "teamId=$TEAM_ID" \
       -v "projectId=$PROJECT_ID" \
       -v "stateId=$DRAFT_STATE_ID" \
@@ -759,7 +755,7 @@ mutation($title: String!, $description: String!, $teamId: String!, $projectId: S
 GQLEOF
     result=$($LINEAR_CLI api query -o json --quiet --compact \
       -v "title=[Spec] $SPEC_TITLE" \
-      -v "description=$(cat "$SPEC_TMPFILE")" \
+      -v "description=$SPEC_CONTENT" \
       -v "teamId=$TEAM_ID" \
       -v "projectId=$PROJECT_ID" \
       - < "$GQL_TMPFILE" 2>&1)
@@ -807,9 +803,6 @@ for ((i=0; i<TOTAL; i++)); do
   pri_num=$(echo "${TASK_BODIES[$i]}" | grep -oE '\*\*Priority\*\*:[[:space:]]*[0-9]+' | grep -oE '[0-9]+' | head -1)
   linear_priority=${pri_num:-3}
 
-  # Write sub-issue body to temp file for description
-  echo "$sub_body" > "$SPEC_TMPFILE"
-
   # Build sub-issue issueCreate mutation via temp file (title/description are user-provided strings)
   # Includes both projectId and parentId at creation time — no separate API calls needed.
   # Priority is inlined as integer literal to avoid Int/String type coercion issues with -v flag.
@@ -833,7 +826,7 @@ mutation(\$title: String!, \$description: String!, \$teamId: String!, \$projectI
 GQLEOF
     result=$($LINEAR_CLI api query -o json --quiet --compact \
       -v "title=$title" \
-      -v "description=$(cat "$SPEC_TMPFILE")" \
+      -v "description=$sub_body" \
       -v "teamId=$TEAM_ID" \
       -v "projectId=$PROJECT_ID" \
       -v "parentId=$PARENT_ID" \
@@ -857,7 +850,7 @@ mutation(\$title: String!, \$description: String!, \$teamId: String!, \$projectI
 GQLEOF
     result=$($LINEAR_CLI api query -o json --quiet --compact \
       -v "title=$title" \
-      -v "description=$(cat "$SPEC_TMPFILE")" \
+      -v "description=$sub_body" \
       -v "teamId=$TEAM_ID" \
       -v "projectId=$PROJECT_ID" \
       -v "parentId=$PARENT_ID" \
