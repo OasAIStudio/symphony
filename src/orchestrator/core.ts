@@ -366,6 +366,7 @@ export class OrchestratorCore {
           input.issueId,
           runningEntry,
           failureSignal.failureClass,
+          input.agentMessage,
         );
       }
 
@@ -430,6 +431,7 @@ export class OrchestratorCore {
       // No on_complete transition — treat as terminal
       delete this.state.issueStages[issueId];
       delete this.state.issueReworkCounts[issueId];
+      delete this.state.issueExecutionHistory[issueId];
       return "completed";
     }
 
@@ -438,12 +440,14 @@ export class OrchestratorCore {
       // Invalid target — treat as terminal
       delete this.state.issueStages[issueId];
       delete this.state.issueReworkCounts[issueId];
+      delete this.state.issueExecutionHistory[issueId];
       return "completed";
     }
 
     if (nextStage.type === "terminal") {
       delete this.state.issueStages[issueId];
       delete this.state.issueReworkCounts[issueId];
+      delete this.state.issueExecutionHistory[issueId];
       // Fire linearState update for the terminal stage (e.g., move to "Done")
       if (nextStage.linearState !== null && this.updateIssueState !== undefined) {
         void this.updateIssueState(issueId, issueIdentifier, nextStage.linearState).catch((err) => {
@@ -466,6 +470,7 @@ export class OrchestratorCore {
     issueId: string,
     runningEntry: RunningEntry,
     failureClass: FailureClass,
+    agentMessage: string | undefined,
   ): RetryEntry | null {
     if (failureClass === "spec") {
       // Spec failures are unrecoverable — escalate immediately
@@ -473,6 +478,7 @@ export class OrchestratorCore {
       this.releaseClaim(issueId);
       delete this.state.issueStages[issueId];
       delete this.state.issueReworkCounts[issueId];
+      delete this.state.issueExecutionHistory[issueId];
       void this.fireEscalationSideEffects(
         issueId,
         runningEntry.identifier,
@@ -495,16 +501,33 @@ export class OrchestratorCore {
     }
 
     // failureClass === "review" — trigger rework via gate lookup
-    return this.handleReviewFailure(issueId, runningEntry);
+    return this.handleReviewFailure(issueId, runningEntry, agentMessage);
+  }
+
+  /**
+   * Format a review findings comment for posting to the issue tracker.
+   * Follows the `formatGateComment()` markdown style.
+   */
+  private formatReviewFindingsComment(
+    failureClass: string,
+    agentMessage: string | undefined,
+  ): string {
+    const sections = [`## Review Findings`, "", `**Failure class:** ${failureClass}`];
+    if (agentMessage !== undefined && agentMessage.trim() !== "") {
+      sections.push("", agentMessage);
+    }
+    return sections.join("\n");
   }
 
   /**
    * Handle review failure: find the downstream gate and use its rework target.
    * Falls back to retry if no gate or rework target is found.
+   * Posts a review findings comment before triggering rework.
    */
   private handleReviewFailure(
     issueId: string,
     runningEntry: RunningEntry,
+    agentMessage: string | undefined,
   ): RetryEntry | null {
     const stagesConfig = this.config.stages;
     if (stagesConfig === null) {
@@ -547,6 +570,7 @@ export class OrchestratorCore {
         return null;
       }
       if (reworkTarget !== null) {
+        this.postReviewFindingsComment(issueId, runningEntry.identifier, agentMessage);
         return this.scheduleRetry(issueId, 1, {
           identifier: runningEntry.identifier,
           error: `agent review failure: rework to ${reworkTarget}`,
@@ -605,11 +629,30 @@ export class OrchestratorCore {
       return null;
     }
 
-    // Rework target set by reworkGate — schedule continuation
+    // Rework target set by reworkGate — post findings and schedule continuation
+    this.postReviewFindingsComment(issueId, runningEntry.identifier, agentMessage);
     return this.scheduleRetry(issueId, 1, {
       identifier: runningEntry.identifier,
       error: `agent review failure: rework to ${reworkTarget}`,
       delayType: "continuation",
+    });
+  }
+
+  /**
+   * Post a review findings comment as a best-effort side effect.
+   * Uses void...catch pattern to never affect pipeline flow.
+   */
+  private postReviewFindingsComment(
+    issueId: string,
+    issueIdentifier: string,
+    agentMessage: string | undefined,
+  ): void {
+    if (this.postComment === undefined) {
+      return;
+    }
+    const comment = this.formatReviewFindingsComment("review", agentMessage);
+    void this.postComment(issueId, comment).catch((err) => {
+      console.warn(`[orchestrator] Failed to post review findings comment for ${issueIdentifier}:`, err);
     });
   }
 
@@ -808,6 +851,7 @@ export class OrchestratorCore {
       // Exceeded max rework — escalate to completed/terminal
       delete this.state.issueStages[issueId];
       delete this.state.issueReworkCounts[issueId];
+      delete this.state.issueExecutionHistory[issueId];
       this.state.completed.add(issueId);
       this.releaseClaim(issueId);
       return "escalated";
@@ -1159,6 +1203,7 @@ export class OrchestratorCore {
       this.releaseClaim(issueId);
       delete this.state.issueStages[issueId];
       delete this.state.issueReworkCounts[issueId];
+      delete this.state.issueExecutionHistory[issueId];
       void this.fireEscalationSideEffects(
         issueId,
         input.identifier ?? issueId,

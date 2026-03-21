@@ -601,6 +601,140 @@ describe("agent-type review stage rework routing", () => {
   });
 });
 
+describe("review findings comment posting on agent review failure", () => {
+  it("posts review findings comment on agent review failure", async () => {
+    const postComment = vi.fn().mockResolvedValue(undefined);
+
+    const orchestrator = createStagedOrchestrator({
+      stages: createAgentReviewWorkflowConfig(),
+      postComment,
+    });
+
+    // Dispatch to implement stage
+    await orchestrator.pollTick();
+    expect(orchestrator.getState().issueStages["1"]).toBe("implement");
+
+    // Advance to review stage
+    orchestrator.onWorkerExit({ issueId: "1", outcome: "normal" });
+    expect(orchestrator.getState().issueStages["1"]).toBe("review");
+    await orchestrator.onRetryTimer("1");
+
+    // Review agent reports failure with message
+    orchestrator.onWorkerExit({
+      issueId: "1",
+      outcome: "normal",
+      agentMessage: "Missing null check in handler.ts line 42\n[STAGE_FAILED: review]",
+    });
+
+    // Allow async side effects to fire
+    await new Promise((resolve) => setTimeout(resolve, 10));
+
+    expect(postComment).toHaveBeenCalledWith(
+      "1",
+      expect.stringContaining("## Review Findings"),
+    );
+  });
+
+  it("review findings comment includes agent message", async () => {
+    const postComment = vi.fn().mockResolvedValue(undefined);
+
+    const orchestrator = createStagedOrchestrator({
+      stages: createAgentReviewWorkflowConfig(),
+      postComment,
+    });
+
+    await orchestrator.pollTick();
+
+    // Advance to review stage
+    orchestrator.onWorkerExit({ issueId: "1", outcome: "normal" });
+    await orchestrator.onRetryTimer("1");
+
+    // Review agent reports failure with specific message
+    orchestrator.onWorkerExit({
+      issueId: "1",
+      outcome: "normal",
+      agentMessage: "Missing null check in handler.ts line 42\n[STAGE_FAILED: review]",
+    });
+
+    // Allow async side effects to fire
+    await new Promise((resolve) => setTimeout(resolve, 10));
+
+    expect(postComment).toHaveBeenCalledTimes(1);
+    const commentBody = postComment.mock.calls[0]![1] as string;
+    expect(commentBody).toContain("Missing null check in handler.ts line 42");
+    expect(commentBody).toContain("review");
+  });
+
+  it("review failure triggers rework after posting comment", async () => {
+    const postComment = vi.fn().mockResolvedValue(undefined);
+
+    const orchestrator = createStagedOrchestrator({
+      stages: createAgentReviewWorkflowConfig(),
+      postComment,
+    });
+
+    await orchestrator.pollTick();
+
+    // Advance to review stage
+    orchestrator.onWorkerExit({ issueId: "1", outcome: "normal" });
+    await orchestrator.onRetryTimer("1");
+
+    // Review agent reports failure
+    const retryEntry = orchestrator.onWorkerExit({
+      issueId: "1",
+      outcome: "normal",
+      agentMessage: "Missing null check in handler.ts line 42\n[STAGE_FAILED: review]",
+    });
+
+    // Should rework back to implement
+    expect(orchestrator.getState().issueStages["1"]).toBe("implement");
+    expect(orchestrator.getState().issueReworkCounts["1"]).toBe(1);
+    expect(retryEntry).not.toBeNull();
+    expect(retryEntry!.error).toBe("agent review failure: rework to implement");
+
+    // Allow async side effects to fire
+    await new Promise((resolve) => setTimeout(resolve, 10));
+
+    // Comment was posted before rework
+    expect(postComment).toHaveBeenCalledWith(
+      "1",
+      expect.stringContaining("## Review Findings"),
+    );
+  });
+
+  it("does not let comment posting failure affect rework flow", async () => {
+    const postComment = vi.fn().mockRejectedValue(new Error("network error"));
+
+    const orchestrator = createStagedOrchestrator({
+      stages: createAgentReviewWorkflowConfig(),
+      postComment,
+    });
+
+    await orchestrator.pollTick();
+
+    // Advance to review stage
+    orchestrator.onWorkerExit({ issueId: "1", outcome: "normal" });
+    await orchestrator.onRetryTimer("1");
+
+    // Review agent reports failure — comment posting will fail
+    const retryEntry = orchestrator.onWorkerExit({
+      issueId: "1",
+      outcome: "normal",
+      agentMessage: "[STAGE_FAILED: review]",
+    });
+
+    // Rework should still succeed despite comment failure
+    expect(orchestrator.getState().issueStages["1"]).toBe("implement");
+    expect(retryEntry).not.toBeNull();
+    expect(retryEntry!.error).toBe("agent review failure: rework to implement");
+
+    // Allow async side effects to fire (and fail silently)
+    await new Promise((resolve) => setTimeout(resolve, 10));
+
+    expect(postComment).toHaveBeenCalled();
+  });
+});
+
 // --- Helpers ---
 
 function createStagedOrchestrator(overrides?: {
