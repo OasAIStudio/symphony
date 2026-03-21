@@ -846,7 +846,24 @@ function renderDashboardClientScript(
           document.getElementById('metric-total').textContent = formatInteger(next.codex_totals.total_tokens);
           document.getElementById('metric-total-detail').textContent = 'In ' + formatInteger(next.codex_totals.input_tokens) + ' / Out ' + formatInteger(next.codex_totals.output_tokens);
           document.getElementById('metric-runtime').textContent = formatRuntimeSeconds(next.codex_totals.seconds_running);
+          // Preserve expand/collapse state before DOM replacement (SYMPH-37)
+          var expandedIds = new Set();
+          document.querySelectorAll('.expand-toggle[aria-expanded="true"]').forEach(function(btn) {
+            expandedIds.add(btn.getAttribute('data-detail'));
+          });
           document.getElementById('running-rows').innerHTML = renderRunningRows(next);
+          // Restore expand state after DOM replacement
+          expandedIds.forEach(function(detailId) {
+            var btn = document.querySelector('.expand-toggle[data-detail="' + detailId + '"]');
+            if (btn) {
+              var d = document.getElementById(detailId);
+              if (d) {
+                d.style.display = 'table-row';
+                btn.setAttribute('aria-expanded', 'true');
+                btn.textContent = '\u25BC Details';
+              }
+            }
+          });
           document.getElementById('retry-rows').innerHTML = renderRetryRows(next);
           document.getElementById('rate-limits').textContent = prettyValue(next.rate_limits);
         }
