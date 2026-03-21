@@ -84,6 +84,13 @@ hooks:
         npm install
       fi
     fi
+    # --- Build code graph (best-effort) ---
+    if command -v code-review-graph >/dev/null 2>&1; then
+      echo "Building code review graph..."
+      code-review-graph build --repo . || echo "WARNING: code-review-graph build failed, continuing without graph" >&2
+    else
+      echo "WARNING: code-review-graph not installed, skipping graph build" >&2
+    fi
     echo "Workspace setup complete (worktree: $BRANCH_NAME)."
   before_run: |
     set -euo pipefail
@@ -206,6 +213,12 @@ stages:
     model: claude-sonnet-4-5
     max_turns: 8
     linear_state: In Progress
+    mcp_servers:
+      code-review-graph:
+        command: uvx
+        args:
+          - code-review-graph
+          - serve
     on_complete: implement
 
   implement:
@@ -213,6 +226,12 @@ stages:
     runner: claude-code
     model: claude-sonnet-4-5
     max_turns: 30
+    mcp_servers:
+      code-review-graph:
+        command: uvx
+        args:
+          - code-review-graph
+          - serve
     on_complete: review
 
   review:
