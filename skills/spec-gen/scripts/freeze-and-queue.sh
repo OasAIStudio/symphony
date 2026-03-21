@@ -814,7 +814,7 @@ for ((i=0; i<TOTAL; i++)); do
   # Includes both projectId and parentId at creation time — no separate API calls needed.
   # Priority is inlined as integer literal to avoid Int/String type coercion issues with -v flag.
   GQL_TMPFILE=$(mktemp)
-  if [[ -n "$TODO_STATE_ID" ]]; then
+  if [[ -n "$BACKLOG_STATE_ID" ]]; then
     cat > "$GQL_TMPFILE" <<GQLEOF
 mutation(\$title: String!, \$description: String!, \$teamId: String!, \$projectId: String!, \$parentId: String!, \$stateId: String!) {
   issueCreate(input: {
@@ -837,7 +837,7 @@ GQLEOF
       -v "teamId=$TEAM_ID" \
       -v "projectId=$PROJECT_ID" \
       -v "parentId=$PARENT_ID" \
-      -v "stateId=$TODO_STATE_ID" \
+      -v "stateId=$BACKLOG_STATE_ID" \
       - < "$GQL_TMPFILE" 2>&1)
   else
     cat > "$GQL_TMPFILE" <<GQLEOF
@@ -966,6 +966,30 @@ for ((i=0; i<TOTAL; i++)); do
 done
 
 [[ $relation_count -eq 0 ]] && echo "  (none)"
+
+# ── Moving unblocked sub-issues to Todo ──────────────────────────────────────
+# A sub-issue is unblocked if its identifier never appears on the RIGHT side of
+# any colon-separated pair in CREATED_RELATIONS (format: |BLOCKER:BLOCKED|...).
+echo ""
+echo "Moving unblocked sub-issues to Todo..."
+promoted_count=0
+for ((i=0; i<TOTAL; i++)); do
+  ident="${SUB_ISSUE_IDENTIFIERS[$i]:-}"
+  sub_id="${SUB_ISSUE_IDS[$i]:-}"
+  [[ -z "$ident" || -z "$sub_id" ]] && continue
+  if [[ "$CREATED_RELATIONS" == *":${ident}"* ]]; then
+    echo "  $ident remains in Backlog (blocked)"
+  else
+    GQL_TMPFILE=$(mktemp)
+    printf 'mutation { issueUpdate(id: "%s", input: { stateId: "%s" }) { success issue { id } } }' \
+      "$sub_id" "$TODO_STATE_ID" > "$GQL_TMPFILE"
+    $LINEAR_CLI api query -o json --quiet --compact - < "$GQL_TMPFILE" > /dev/null 2>&1 || true
+    rm -f "$GQL_TMPFILE"; GQL_TMPFILE=""
+    echo "  $ident promoted to Todo (unblocked)"
+    ((promoted_count++))
+  fi
+done
+echo "Promoted $promoted_count sub-issue(s) to Todo"
 
 # ── Transition parent to Backlog (sub-issues now frozen) ─────────────────────
 # Only reached when PARENT_ONLY=false (--parent-only exits at line 555)
