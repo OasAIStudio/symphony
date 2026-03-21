@@ -296,7 +296,7 @@ export class OrchestratorCore {
         retryEntry: this.scheduleRetry(issueId, retryEntry.attempt + 1, {
           identifier: retryEntry.identifier,
           error: "retry poll failed",
-          delayType: "failure",
+          delayType: retryEntry.delayType,
         }),
       };
     }
@@ -331,7 +331,7 @@ export class OrchestratorCore {
         retryEntry: this.scheduleRetry(issueId, retryEntry.attempt + 1, {
           identifier: issue.identifier,
           error: "no available orchestrator slots",
-          delayType: "failure",
+          delayType: retryEntry.delayType,
         }),
       };
     }
@@ -1338,6 +1338,7 @@ export class OrchestratorCore {
       dueAtMs,
       timerHandle,
       error: input.error,
+      delayType: input.delayType,
     };
 
     this.state.claimed.add(issueId);

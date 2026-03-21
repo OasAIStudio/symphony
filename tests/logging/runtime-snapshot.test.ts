@@ -54,6 +54,7 @@ describe("runtime snapshot", () => {
       dueAtMs: Date.parse("2026-03-06T10:00:20.000Z"),
       timerHandle: null,
       error: "no available orchestrator slots",
+      delayType: "failure",
     };
 
     const snapshot = buildRuntimeSnapshot(state, {

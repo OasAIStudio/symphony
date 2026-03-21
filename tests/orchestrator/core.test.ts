@@ -282,6 +282,7 @@ describe("orchestrator core", () => {
       dueAtMs: Date.parse("2026-03-06T00:00:00.000Z"),
       timerHandle: null,
       error: "previous failure",
+      delayType: "failure",
     };
 
     const result = await orchestrator.onRetryTimer("1");
@@ -616,6 +617,7 @@ describe("max retry safety net", () => {
       dueAtMs: Date.parse("2026-03-06T00:00:00.000Z"),
       timerHandle: null,
       error: "previous failure",
+      delayType: "failure",
     };
 
     // When onRetryTimer fires and slots are exhausted, it calls scheduleRetry

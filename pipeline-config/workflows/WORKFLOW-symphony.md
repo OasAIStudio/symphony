@@ -22,7 +22,7 @@ workspace:
   root: ./workspaces
 
 agent:
-  max_concurrent_agents: 1
+  max_concurrent_agents: 3
   max_turns: 30
   max_retry_backoff_ms: 300000
 

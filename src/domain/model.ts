@@ -117,6 +117,7 @@ export interface RetryEntry {
   dueAtMs: number;
   timerHandle: ReturnType<typeof setTimeout> | null;
   error: string | null;
+  delayType: "continuation" | "failure";
 }
 
 export interface CodexTotals {
