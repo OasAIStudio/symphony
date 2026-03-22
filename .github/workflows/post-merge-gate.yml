@@ -53,7 +53,7 @@ jobs:
         run: |
           # Get current version from package.json
           CURRENT_VERSION=$(node -p "require('./package.json').version")
-          TODAY=$(date -u +"%Y.%-m.%-d")
+          TODAY=$(date -u +"%Y.%m.%d")
 
           # Extract date prefix and sequence from current version
           CURRENT_PREFIX=$(echo "$CURRENT_VERSION" | cut -d. -f1-3)
