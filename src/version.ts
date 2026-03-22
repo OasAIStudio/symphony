@@ -1,13 +1,33 @@
 import { execSync } from "node:child_process";
+import { existsSync } from "node:fs";
 import { createRequire } from "node:module";
+import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 
 const require = createRequire(import.meta.url);
+
+/**
+ * Resolve the path to the project-root package.json.
+ * Works from both src/version.ts and dist/src/version.js.
+ */
+function findPackageJson(): string {
+  let dir = dirname(fileURLToPath(import.meta.url));
+  for (let i = 0; i < 5; i++) {
+    const candidate = resolve(dir, "package.json");
+    if (existsSync(candidate)) {
+      return candidate;
+    }
+    dir = dirname(dir);
+  }
+  // Fallback — let createRequire throw a clear error if missing.
+  return resolve(dirname(fileURLToPath(import.meta.url)), "../package.json");
+}
 
 /**
  * The calver version string read from package.json at runtime.
  */
 export const VERSION: string = (
-  require("../package.json") as { version: string }
+  require(findPackageJson()) as { version: string }
 ).version;
 
 let cachedGitSha: string | undefined;
