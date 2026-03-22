@@ -25,7 +25,7 @@ describe("dashboard server", () => {
     });
     servers.push(server);
 
-    expect(server.hostname).toBe("127.0.0.1");
+    expect(server.hostname).toBe("0.0.0.0");
     expect(server.port).toBeGreaterThan(0);
 
     const dashboard = await sendRequest(server.port, {
