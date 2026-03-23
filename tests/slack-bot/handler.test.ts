@@ -127,7 +127,10 @@ describe("createMessageHandler", () => {
       model: "sonnet",
     });
 
-    const { args } = createMockBoltArgs("C123", "What files are in this project?");
+    const { args } = createMockBoltArgs(
+      "C123",
+      "What files are in this project?",
+    );
     await handler(args);
 
     // Verify claudeCode was called with correct cwd and permissionMode

@@ -64,9 +64,7 @@ if (isDirectExecution) {
     void startSlackBot(config);
   } catch (error) {
     console.error(
-      error instanceof Error
-        ? error.message
-        : "Failed to start Slack bot",
+      error instanceof Error ? error.message : "Failed to start Slack bot",
     );
     process.exit(1);
   }

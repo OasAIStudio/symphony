@@ -8,15 +8,15 @@ describe("loadSlackBotConfig", () => {
   });
 
   it("names the missing variable SLACK_BOT_TOKEN", () => {
-    expect(() =>
-      loadSlackBotConfig({ SLACK_APP_TOKEN: "xapp-token" }),
-    ).toThrow("SLACK_BOT_TOKEN");
+    expect(() => loadSlackBotConfig({ SLACK_APP_TOKEN: "xapp-token" })).toThrow(
+      "SLACK_BOT_TOKEN",
+    );
   });
 
   it("names the missing variable SLACK_APP_TOKEN", () => {
-    expect(() =>
-      loadSlackBotConfig({ SLACK_BOT_TOKEN: "xoxb-token" }),
-    ).toThrow("SLACK_APP_TOKEN");
+    expect(() => loadSlackBotConfig({ SLACK_BOT_TOKEN: "xoxb-token" })).toThrow(
+      "SLACK_APP_TOKEN",
+    );
   });
 
   it("parses channel project map from JSON", () => {

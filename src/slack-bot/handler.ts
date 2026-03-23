@@ -6,10 +6,7 @@
  * Supports session continuity (thread replies resume CC sessions) and
  * runtime channel-to-project mapping via /project set slash commands.
  */
-import type {
-  AllMiddlewareArgs,
-  SlackEventMiddlewareArgs,
-} from "@slack/bolt";
+import type { AllMiddlewareArgs, SlackEventMiddlewareArgs } from "@slack/bolt";
 import { streamText } from "ai";
 import { claudeCode } from "ai-sdk-provider-claude-code";
 
@@ -79,7 +76,7 @@ export function createMessageHandler(options: HandleMessageOptions) {
 
     // Derive thread and message identifiers
     const threadTs =
-      "thread_ts" in message ? message.thread_ts ?? message.ts : message.ts;
+      "thread_ts" in message ? (message.thread_ts ?? message.ts) : message.ts;
     const messageTs = message.ts;
     const channel = message.channel;
 

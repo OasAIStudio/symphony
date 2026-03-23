@@ -228,9 +228,7 @@ describe("Session continuity in handler", () => {
     await handler(args);
 
     // Thread ID = message.thread_ts || message.ts = "1234.5678"
-    expect(getCcSessionId(ccSessions, "1234.5678")).toBe(
-      "returned-session-id",
-    );
+    expect(getCcSessionId(ccSessions, "1234.5678")).toBe("returned-session-id");
   });
 
   it("does not store session ID when provider metadata lacks it", async () => {

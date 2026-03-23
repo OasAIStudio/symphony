@@ -102,7 +102,11 @@ describe("Reaction lifecycle", () => {
 
     // Verify eyes reaction was added first
     expect(client.reactions.add).toHaveBeenCalledWith(
-      expect.objectContaining({ channel: "C123", timestamp: "1234.5678", name: "eyes" }),
+      expect.objectContaining({
+        channel: "C123",
+        timestamp: "1234.5678",
+        name: "eyes",
+      }),
     );
     // Eyes should be the first call to addReaction
     expect(client.reactions.add.mock.calls[0]?.[0]).toEqual(
