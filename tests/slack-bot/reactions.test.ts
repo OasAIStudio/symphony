@@ -13,6 +13,7 @@ import { streamText } from "ai";
 import { claudeCode } from "ai-sdk-provider-claude-code";
 
 import { createMessageHandler } from "../../src/slack-bot/handler.js";
+import { createCcSessionStore } from "../../src/slack-bot/session-store.js";
 import type {
   ChannelProjectMap,
   SessionMap,
@@ -75,9 +76,10 @@ describe("Reaction lifecycle", () => {
     );
     vi.mocked(streamText).mockReturnValue({
       textStream: createAsyncIterable(["response"]),
-    } as ReturnType<typeof streamText>);
+      response: Promise.resolve({ messages: [] }),
+    } as unknown as ReturnType<typeof streamText>);
 
-    const handler = createMessageHandler({ channelMap, sessions });
+    const handler = createMessageHandler({ channelMap, sessions, ccSessions: createCcSessionStore() });
     const thread = createMockThread("C123");
     const message = createMockMessage("test");
 
@@ -112,9 +114,10 @@ describe("Reaction lifecycle", () => {
     );
     vi.mocked(streamText).mockReturnValue({
       textStream: createAsyncIterable(["response"]),
-    } as ReturnType<typeof streamText>);
+      response: Promise.resolve({ messages: [] }),
+    } as unknown as ReturnType<typeof streamText>);
 
-    const handler = createMessageHandler({ channelMap, sessions });
+    const handler = createMessageHandler({ channelMap, sessions, ccSessions: createCcSessionStore() });
     const thread = createMockThread("C123");
     const message = createMockMessage("test");
 
@@ -170,9 +173,10 @@ describe("Reaction lifecycle", () => {
 
     vi.mocked(streamText).mockReturnValue({
       textStream: failingStream,
-    } as ReturnType<typeof streamText>);
+      response: Promise.resolve({ messages: [] }),
+    } as unknown as ReturnType<typeof streamText>);
 
-    const handler = createMessageHandler({ channelMap, sessions });
+    const handler = createMessageHandler({ channelMap, sessions, ccSessions: createCcSessionStore() });
     const thread = createMockThread("C123");
     const message = createMockMessage("test");
 

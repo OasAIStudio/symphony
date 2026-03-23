@@ -3,12 +3,17 @@
  *
  * Receives messages via the Chat SDK, manages reaction indicators,
  * invokes Claude Code via the AI SDK streamText, and posts threaded replies.
+ * Supports session continuity (thread replies resume CC sessions) and
+ * runtime channel-to-project mapping via /project set slash commands.
  */
 import { streamText } from "ai";
 import { claudeCode } from "ai-sdk-provider-claude-code";
 import type { Adapter, Message, Thread } from "chat";
 
 import { resolveClaudeModelId } from "../runners/claude-code-runner.js";
+import type { CcSessionStore } from "./session-store.js";
+import { getCcSessionId, setCcSessionId } from "./session-store.js";
+import { parseSlashCommand } from "./slash-commands.js";
 import type { ChannelProjectMap, SessionMap } from "./types.js";
 
 export interface HandleMessageOptions {
@@ -16,6 +21,8 @@ export interface HandleMessageOptions {
   channelMap: ChannelProjectMap;
   /** In-memory session store */
   sessions: SessionMap;
+  /** In-memory CC session store (thread ID → CC session ID) */
+  ccSessions: CcSessionStore;
   /** Claude Code model identifier (default: "sonnet") */
   model?: string;
 }
@@ -33,10 +40,22 @@ export function splitAtParagraphs(text: string): string[] {
  * Creates a message handler function for use with `chat.onNewMessage()`.
  */
 export function createMessageHandler(options: HandleMessageOptions) {
-  const { channelMap, sessions, model = "sonnet" } = options;
+  const { channelMap, sessions, ccSessions, model = "sonnet" } = options;
 
   return async (thread: Thread, message: Message): Promise<void> => {
     const adapter: Adapter = thread.adapter;
+
+    // Check for slash commands before anything else
+    const command = parseSlashCommand(message.text);
+    if (command) {
+      if (command.type === "project-set") {
+        channelMap.set(thread.channelId, command.path);
+        await thread.post(
+          `Project directory for this channel set to \`${command.path}\`.`,
+        );
+      }
+      return;
+    }
 
     // Add eyes reaction to indicate processing
     await adapter.addReaction(thread.id, message.id, "eyes");
@@ -60,13 +79,24 @@ export function createMessageHandler(options: HandleMessageOptions) {
         lastActiveAt: new Date(),
       });
 
-      // Invoke Claude Code via AI SDK streamText
+      // Build CC provider options with session continuity
       const resolvedModel = resolveClaudeModelId(model);
+      const existingSessionId = getCcSessionId(ccSessions, thread.id);
+      const ccOptions: {
+        cwd: string;
+        permissionMode: "bypassPermissions";
+        resume?: string;
+      } = {
+        cwd: projectDir,
+        permissionMode: "bypassPermissions",
+      };
+      if (existingSessionId) {
+        ccOptions.resume = existingSessionId;
+      }
+
+      // Invoke Claude Code via AI SDK streamText
       const result = streamText({
-        model: claudeCode(resolvedModel, {
-          cwd: projectDir,
-          permissionMode: "bypassPermissions",
-        }),
+        model: claudeCode(resolvedModel, ccOptions),
         prompt: message.text,
       });
 
@@ -74,6 +104,16 @@ export function createMessageHandler(options: HandleMessageOptions) {
       let fullText = "";
       for await (const chunk of result.textStream) {
         fullText += chunk;
+      }
+
+      // Extract and store session ID from provider metadata for continuity
+      const response = await result.response;
+      const lastMsg = response.messages?.[response.messages.length - 1] as
+        | { providerMetadata?: { "claude-code"?: { sessionId?: string } } }
+        | undefined;
+      const ccSessionId = lastMsg?.providerMetadata?.["claude-code"]?.sessionId;
+      if (ccSessionId) {
+        setCcSessionId(ccSessions, thread.id, ccSessionId);
       }
 
       // Split at paragraph boundaries and post each chunk as a thread reply

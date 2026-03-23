@@ -9,9 +9,13 @@ import { createMemoryState } from "@chat-adapter/state-memory";
 import { type Adapter, Chat } from "chat";
 
 import { createMessageHandler } from "./handler.js";
+import { createCcSessionStore } from "./session-store.js";
 import type { ChannelProjectMap, SessionMap, SlackBotConfig } from "./types.js";
 
 export type { SlackBotConfig, ChannelProjectMap, SessionMap } from "./types.js";
+export type { CcSessionStore } from "./session-store.js";
+export { createCcSessionStore, getCcSessionId, setCcSessionId } from "./session-store.js";
+export { parseSlashCommand } from "./slash-commands.js";
 export { createMessageHandler, splitAtParagraphs } from "./handler.js";
 
 /**
@@ -40,6 +44,9 @@ export function parseChannelProjectMap(json: string): ChannelProjectMap {
 /** In-memory session store shared across handlers. */
 const sessions: SessionMap = new Map();
 
+/** In-memory CC session store for session continuity. */
+const ccSessions = createCcSessionStore();
+
 /**
  * Create and configure a Chat instance for the Slack bot.
  *
@@ -59,6 +66,7 @@ export function createSlackBot(config: SlackBotConfig) {
   const handler = createMessageHandler({
     channelMap,
     sessions,
+    ccSessions,
     ...(model !== undefined ? { model } : {}),
   });
 
@@ -71,5 +79,7 @@ export function createSlackBot(config: SlackBotConfig) {
     webhooks: chat.webhooks,
     /** The in-memory session store (exposed for testing / monitoring). */
     sessions,
+    /** The in-memory CC session store (exposed for testing / monitoring). */
+    ccSessions,
   };
 }

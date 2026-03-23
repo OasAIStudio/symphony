@@ -16,6 +16,7 @@ import {
   createMessageHandler,
   splitAtParagraphs,
 } from "../../src/slack-bot/handler.js";
+import { createCcSessionStore } from "../../src/slack-bot/session-store.js";
 import type {
   ChannelProjectMap,
   SessionMap,
@@ -61,6 +62,20 @@ async function* createAsyncIterable(chunks: string[]): AsyncIterable<string> {
   }
 }
 
+// Helper to create a mock streamText return value with response promise
+function createMockStreamResult(
+  chunks: string[],
+  sessionId?: string,
+) {
+  const messages = sessionId
+    ? [{ providerMetadata: { "claude-code": { sessionId } } }]
+    : [];
+  return {
+    textStream: createAsyncIterable(chunks),
+    response: Promise.resolve({ messages }),
+  } as unknown as ReturnType<typeof streamText>;
+}
+
 describe("createMessageHandler", () => {
   afterEach(() => {
     vi.restoreAllMocks();
@@ -71,18 +86,20 @@ describe("createMessageHandler", () => {
       ["C123", "/tmp/test-project"],
     ]);
     const sessions: SessionMap = new Map();
+    const ccSessions = createCcSessionStore();
     const mockModel = { id: "mock-claude-code-model" };
 
     vi.mocked(claudeCode).mockReturnValue(
       mockModel as unknown as ReturnType<typeof claudeCode>,
     );
-    vi.mocked(streamText).mockReturnValue({
-      textStream: createAsyncIterable(["Hello from Claude"]),
-    } as ReturnType<typeof streamText>);
+    vi.mocked(streamText).mockReturnValue(
+      createMockStreamResult(["Hello from Claude"]),
+    );
 
     const handler = createMessageHandler({
       channelMap,
       sessions,
+      ccSessions,
       model: "sonnet",
     });
 
@@ -112,16 +129,17 @@ describe("createMessageHandler", () => {
       ["C123", "/tmp/test-project"],
     ]);
     const sessions: SessionMap = new Map();
+    const ccSessions = createCcSessionStore();
     const mockModel = { id: "mock-claude-code-model" };
 
     vi.mocked(claudeCode).mockReturnValue(
       mockModel as unknown as ReturnType<typeof claudeCode>,
     );
-    vi.mocked(streamText).mockReturnValue({
-      textStream: createAsyncIterable(["Here are the files"]),
-    } as ReturnType<typeof streamText>);
+    vi.mocked(streamText).mockReturnValue(
+      createMockStreamResult(["Here are the files"]),
+    );
 
-    const handler = createMessageHandler({ channelMap, sessions });
+    const handler = createMessageHandler({ channelMap, sessions, ccSessions });
 
     const thread = createMockThread("C123");
     const message = createMockMessage("What files?");
@@ -140,18 +158,19 @@ describe("createMessageHandler", () => {
       ["C123", "/tmp/test-project"],
     ]);
     const sessions: SessionMap = new Map();
+    const ccSessions = createCcSessionStore();
     const mockModel = { id: "mock-claude-code-model" };
 
     vi.mocked(claudeCode).mockReturnValue(
       mockModel as unknown as ReturnType<typeof claudeCode>,
     );
-    vi.mocked(streamText).mockReturnValue({
-      textStream: createAsyncIterable([
+    vi.mocked(streamText).mockReturnValue(
+      createMockStreamResult([
         "First paragraph.\n\nSecond paragraph.\n\nThird paragraph.",
       ]),
-    } as ReturnType<typeof streamText>);
+    );
 
-    const handler = createMessageHandler({ channelMap, sessions });
+    const handler = createMessageHandler({ channelMap, sessions, ccSessions });
 
     const thread = createMockThread("C123");
     const message = createMockMessage("Tell me about files");
@@ -172,16 +191,17 @@ describe("createMessageHandler", () => {
       ["C123", "/tmp/test-project"],
     ]);
     const sessions: SessionMap = new Map();
+    const ccSessions = createCcSessionStore();
     const mockModel = { id: "mock-claude-code-model" };
 
     vi.mocked(claudeCode).mockReturnValue(
       mockModel as unknown as ReturnType<typeof claudeCode>,
     );
-    vi.mocked(streamText).mockReturnValue({
-      textStream: createAsyncIterable(["OK"]),
-    } as ReturnType<typeof streamText>);
+    vi.mocked(streamText).mockReturnValue(
+      createMockStreamResult(["OK"]),
+    );
 
-    const handler = createMessageHandler({ channelMap, sessions });
+    const handler = createMessageHandler({ channelMap, sessions, ccSessions });
     const thread = createMockThread("C123");
     const message = createMockMessage("test");
 
@@ -199,8 +219,9 @@ describe("createMessageHandler", () => {
   it("posts warning when channel has no mapped project directory", async () => {
     const channelMap: ChannelProjectMap = new Map(); // empty
     const sessions: SessionMap = new Map();
+    const ccSessions = createCcSessionStore();
 
-    const handler = createMessageHandler({ channelMap, sessions });
+    const handler = createMessageHandler({ channelMap, sessions, ccSessions });
     const thread = createMockThread("C999");
     const message = createMockMessage("hello");
 
@@ -230,6 +251,7 @@ describe("createMessageHandler", () => {
       ["C123", "/tmp/test-project"],
     ]);
     const sessions: SessionMap = new Map();
+    const ccSessions = createCcSessionStore();
     const mockModel = { id: "mock-claude-code-model" };
 
     vi.mocked(claudeCode).mockReturnValue(
@@ -249,9 +271,10 @@ describe("createMessageHandler", () => {
 
     vi.mocked(streamText).mockReturnValue({
       textStream: failingStream,
-    } as ReturnType<typeof streamText>);
+      response: Promise.resolve({ messages: [] }),
+    } as unknown as ReturnType<typeof streamText>);
 
-    const handler = createMessageHandler({ channelMap, sessions });
+    const handler = createMessageHandler({ channelMap, sessions, ccSessions });
     const thread = createMockThread("C123");
     const message = createMockMessage("test");
 
@@ -280,16 +303,17 @@ describe("createMessageHandler", () => {
       ["C123", "/tmp/test-project"],
     ]);
     const sessions: SessionMap = new Map();
+    const ccSessions = createCcSessionStore();
     const mockModel = { id: "mock-claude-code-model" };
 
     vi.mocked(claudeCode).mockReturnValue(
       mockModel as unknown as ReturnType<typeof claudeCode>,
     );
-    vi.mocked(streamText).mockReturnValue({
-      textStream: createAsyncIterable(["OK"]),
-    } as ReturnType<typeof streamText>);
+    vi.mocked(streamText).mockReturnValue(
+      createMockStreamResult(["OK"]),
+    );
 
-    const handler = createMessageHandler({ channelMap, sessions });
+    const handler = createMessageHandler({ channelMap, sessions, ccSessions });
     const thread = createMockThread("C123");
     const message = createMockMessage("test");
 
