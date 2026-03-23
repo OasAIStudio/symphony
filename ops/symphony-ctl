@@ -13,7 +13,7 @@ SERVICE_LABEL="com.symphony.${SYMPHONY_PROJECT}"
 PLIST_PATH="$HOME/Library/LaunchAgents/${SERVICE_LABEL}.plist"
 LOG_DIR="$HOME/Library/Logs/symphony/${SYMPHONY_PROJECT}"
 ENV_FILE="${SYMPHONY_ENV_FILE:-$SYMPHONY_ROOT/.env}"
-WORKFLOW_PATH="${SYMPHONY_WORKFLOW:-$SYMPHONY_ROOT/WORKFLOW.md}"
+WORKFLOW_PATH="${SYMPHONY_WORKFLOW:-$SYMPHONY_ROOT/pipeline-config/workflows/WORKFLOW-${SYMPHONY_PROJECT}.md}"
 NODE_BIN="${SYMPHONY_NODE:-$(which node 2>/dev/null || echo /opt/homebrew/bin/node)}"
 CLI_JS="$SYMPHONY_ROOT/dist/src/cli/main.js"
 
@@ -1077,7 +1077,7 @@ Commands:
 Environment:
   SYMPHONY_PROJECT    Project name for label/logs (default: symphony)
   SYMPHONY_ENV_FILE   Path to .env file (default: <symphony-root>/.env)
-  SYMPHONY_WORKFLOW   Path to WORKFLOW.md (default: <symphony-root>/WORKFLOW.md)
+  SYMPHONY_WORKFLOW   Path to WORKFLOW.md (default: pipeline-config/workflows/WORKFLOW-\$SYMPHONY_PROJECT.md)
   SYMPHONY_NODE       Path to node binary (default: auto-detected)
 
 EOF
