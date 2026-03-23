@@ -596,9 +596,7 @@ describe("createMessageHandler", () => {
     vi.mocked(claudeCode).mockReturnValue(
       mockModel as unknown as ReturnType<typeof claudeCode>,
     );
-    vi.mocked(streamText).mockReturnValue(
-      createMockStreamResult(["Hello"]),
-    );
+    vi.mocked(streamText).mockReturnValue(createMockStreamResult(["Hello"]));
 
     const handler = createMessageHandler({
       channelMap,

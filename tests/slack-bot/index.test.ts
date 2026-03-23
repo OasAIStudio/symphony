@@ -32,14 +32,14 @@ describe("createSlackBoltApp", () => {
 
 describe("env var validation", () => {
   it("throws clear error when SLACK_APP_TOKEN is missing", () => {
-    expect(() =>
-      loadSlackBotConfig({ SLACK_BOT_TOKEN: "xoxb-test" }),
-    ).toThrow("SLACK_APP_TOKEN");
+    expect(() => loadSlackBotConfig({ SLACK_BOT_TOKEN: "xoxb-test" })).toThrow(
+      "SLACK_APP_TOKEN",
+    );
   });
 
   it("throws clear error when SLACK_BOT_TOKEN is missing", () => {
-    expect(() =>
-      loadSlackBotConfig({ SLACK_APP_TOKEN: "xapp-test" }),
-    ).toThrow("SLACK_BOT_TOKEN");
+    expect(() => loadSlackBotConfig({ SLACK_APP_TOKEN: "xapp-test" })).toThrow(
+      "SLACK_BOT_TOKEN",
+    );
   });
 });
