@@ -191,9 +191,9 @@ if $DO_SYMPHONY; then
     if [[ ! -f "$local_env" ]] || [[ "$local_enc" -nt "$local_env" ]]; then
       info ".env.enc is newer than .env — decrypting..."
       if $DRY_RUN; then
-        info "[dry-run] sops --decrypt $local_enc > $local_env"
+        info "[dry-run] sops --decrypt --input-type dotenv --output-type dotenv $local_enc > $local_env"
       else
-        sops --decrypt "$local_enc" > "$local_env"
+        sops --decrypt --input-type dotenv --output-type dotenv "$local_enc" > "$local_env"
       fi
       ok ".env decrypted"
       NEED_ENV_RESTART=true
@@ -248,6 +248,32 @@ if ! $NO_RESTART && $DO_SYMPHONY; then
     ok "Service restarted"
   else
     ok "No changes — service left as-is"
+  fi
+
+  echo ""
+fi
+
+# --- 3b. Slack bridge restart ---
+if ! $NO_RESTART && $DO_SYMPHONY; then
+  SLACK_CTL="$SCRIPT_DIR/slack-bridge-ctl"
+  SLACK_PLIST="$HOME/Library/LaunchAgents/com.slack-bridge.plist"
+
+  if [[ ! -x "$SLACK_CTL" ]]; then
+    info "slack-bridge-ctl not found — skipping"
+  elif [[ ! -f "$SLACK_PLIST" ]]; then
+    info "Slack bridge not installed — skipping"
+  elif $NEED_ENV_RESTART; then
+    info ".env was refreshed — reinstalling slack bridge..."
+    run_or_dry "$SLACK_CTL" uninstall
+    run_or_dry "$SLACK_CTL" install
+    run_or_dry "$SLACK_CTL" start
+    ok "Slack bridge reinstalled and started"
+  elif $SYMPHONY_UPDATED; then
+    info "Code updated — restarting slack bridge..."
+    run_or_dry "$SLACK_CTL" restart
+    ok "Slack bridge restarted"
+  else
+    ok "No changes — slack bridge left as-is"
   fi
 
   echo ""
