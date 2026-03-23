@@ -16,26 +16,26 @@ export interface DashboardRenderOptions {
 
 const DASHBOARD_STYLES = String.raw`
       :root {
-        color-scheme: light;
-        --page: #f7f7f8;
-        --page-soft: #fbfbfc;
-        --page-deep: #ececf1;
-        --card: rgba(255, 255, 255, 0.94);
-        --card-muted: #f3f4f6;
-        --ink: #202123;
-        --muted: #6e6e80;
-        --line: #ececf1;
-        --line-strong: #d9d9e3;
+        color-scheme: dark;
+        --page: #111113;
+        --page-soft: #161618;
+        --page-deep: #0c0c0e;
+        --card: rgba(28, 28, 32, 0.94);
+        --card-muted: #1e1e22;
+        --ink: #e8e8ec;
+        --muted: #8e8ea0;
+        --line: #2a2a30;
+        --line-strong: #3a3a42;
         --accent: #10a37f;
-        --accent-ink: #0f513f;
-        --accent-soft: #e8faf4;
-        --danger: #b42318;
-        --danger-soft: #fef3f2;
-        --warning: #8a5a00;
-        --warning-soft: #fff7e8;
-        --warning-line: #f1d8a6;
-        --shadow-sm: 0 1px 2px rgba(16, 24, 40, 0.05);
-        --shadow-lg: 0 20px 50px rgba(15, 23, 42, 0.08);
+        --accent-ink: #5fe0b8;
+        --accent-soft: rgba(16, 163, 127, 0.12);
+        --danger: #f87171;
+        --danger-soft: rgba(248, 113, 113, 0.1);
+        --warning: #fbbf24;
+        --warning-soft: rgba(251, 191, 36, 0.1);
+        --warning-line: rgba(251, 191, 36, 0.2);
+        --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3);
+        --shadow-lg: 0 20px 50px rgba(0, 0, 0, 0.4);
       }
       * {
         box-sizing: border-box;
@@ -47,8 +47,8 @@ const DASHBOARD_STYLES = String.raw`
         margin: 0;
         min-height: 100vh;
         background:
-          radial-gradient(circle at top, rgba(16, 163, 127, 0.12) 0%, rgba(16, 163, 127, 0) 30%),
-          linear-gradient(180deg, var(--page-soft) 0%, var(--page) 24%, #f3f4f6 100%);
+          radial-gradient(circle at top, rgba(16, 163, 127, 0.08) 0%, rgba(16, 163, 127, 0) 30%),
+          linear-gradient(180deg, var(--page-soft) 0%, var(--page) 24%, var(--page-deep) 100%);
         color: var(--ink);
         font-family: "Sohne", "SF Pro Text", "Helvetica Neue", "Segoe UI", sans-serif;
         line-height: 1.5;
@@ -72,7 +72,7 @@ const DASHBOARD_STYLES = String.raw`
         font: inherit;
         font-weight: 600;
         letter-spacing: -0.01em;
-        box-shadow: 0 8px 20px rgba(16, 163, 127, 0.18);
+        box-shadow: 0 8px 20px rgba(16, 163, 127, 0.25);
         transition:
           transform 140ms ease,
           box-shadow 140ms ease,
@@ -81,11 +81,11 @@ const DASHBOARD_STYLES = String.raw`
       }
       button:hover {
         transform: translateY(-1px);
-        box-shadow: 0 12px 24px rgba(16, 163, 127, 0.22);
+        box-shadow: 0 12px 24px rgba(16, 163, 127, 0.3);
       }
       .subtle-button {
         border: 1px solid var(--line-strong);
-        background: rgba(255, 255, 255, 0.72);
+        background: rgba(255, 255, 255, 0.06);
         color: var(--muted);
         padding: 0.34rem 0.72rem;
         font-size: 0.82rem;
@@ -95,7 +95,7 @@ const DASHBOARD_STYLES = String.raw`
       .subtle-button:hover {
         transform: none;
         box-shadow: none;
-        background: white;
+        background: rgba(255, 255, 255, 0.1);
         border-color: var(--muted);
         color: var(--ink);
       }
@@ -122,7 +122,7 @@ const DASHBOARD_STYLES = String.raw`
       .section-card,
       .metric-card {
         background: var(--card);
-        border: 1px solid rgba(217, 217, 227, 0.82);
+        border: 1px solid var(--line);
         box-shadow: var(--shadow-sm);
         backdrop-filter: blur(18px);
       }
@@ -186,7 +186,7 @@ const DASHBOARD_STYLES = String.raw`
       }
       .status-badge-live {
         background: var(--accent-soft);
-        border-color: rgba(16, 163, 127, 0.18);
+        border-color: rgba(16, 163, 127, 0.3);
         color: var(--accent-ink);
       }
       .metric-grid {
@@ -303,7 +303,7 @@ const DASHBOARD_STYLES = String.raw`
       }
       .state-badge-active {
         background: var(--accent-soft);
-        border-color: rgba(16, 163, 127, 0.18);
+        border-color: rgba(16, 163, 127, 0.3);
         color: var(--accent-ink);
       }
       .state-badge-warning {
@@ -313,7 +313,7 @@ const DASHBOARD_STYLES = String.raw`
       }
       .state-badge-danger {
         background: var(--danger-soft);
-        border-color: #f6d3cf;
+        border-color: rgba(248, 113, 113, 0.2);
         color: var(--danger);
       }
       .health-badge {
@@ -337,11 +337,11 @@ const DASHBOARD_STYLES = String.raw`
         border-radius: 50%;
         background: var(--ink-muted);
       }
-      .health-badge-green { background: var(--accent-soft); border-color: rgba(16, 163, 127, 0.18); color: var(--accent-ink); }
+      .health-badge-green { background: var(--accent-soft); border-color: rgba(16, 163, 127, 0.3); color: var(--accent-ink); }
       .health-badge-green .health-badge-dot { background: var(--accent); }
       .health-badge-yellow { background: var(--warning-soft); border-color: var(--warning-line); color: var(--warning); }
       .health-badge-yellow .health-badge-dot { background: var(--warning); }
-      .health-badge-red { background: var(--danger-soft); border-color: #f6d3cf; color: var(--danger); }
+      .health-badge-red { background: var(--danger-soft); border-color: rgba(248, 113, 113, 0.2); color: var(--danger); }
       .health-badge-red .health-badge-dot { background: var(--danger); }
       .issue-id {
         font-weight: 600;
@@ -365,9 +365,9 @@ const DASHBOARD_STYLES = String.raw`
         margin-top: 1rem;
         padding: 1rem;
         border-radius: 18px;
-        background: #f5f5f7;
+        background: var(--page-deep);
         border: 1px solid var(--line);
-        color: #353740;
+        color: var(--ink);
         font-size: 0.9rem;
         white-space: pre-wrap;
         word-break: break-word;
@@ -378,7 +378,7 @@ const DASHBOARD_STYLES = String.raw`
       }
       .expand-toggle {
         border: 1px solid var(--line-strong);
-        background: rgba(255, 255, 255, 0.72);
+        background: rgba(255, 255, 255, 0.06);
         color: var(--muted);
         border-radius: 4px;
         padding: 0.18rem 0.48rem;
@@ -393,7 +393,7 @@ const DASHBOARD_STYLES = String.raw`
       .expand-toggle:hover {
         transform: none;
         box-shadow: none;
-        background: white;
+        background: rgba(255, 255, 255, 0.1);
         border-color: var(--muted);
         color: var(--ink);
       }
