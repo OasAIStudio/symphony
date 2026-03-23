@@ -528,6 +528,127 @@ describe("createMessageHandler", () => {
 
     expect(say).not.toHaveBeenCalled();
   });
+
+  it("resumes CC session for thread replies", async () => {
+    const channelMap: ChannelProjectMap = new Map([
+      ["C123", "/tmp/test-project"],
+    ]);
+    const sessions: SessionMap = new Map();
+    const ccSessions = createCcSessionStore();
+    const mockModel = { id: "mock-claude-code-model" };
+
+    vi.mocked(claudeCode).mockReturnValue(
+      mockModel as unknown as ReturnType<typeof claudeCode>,
+    );
+
+    // First message: returns a sessionId via providerMetadata
+    vi.mocked(streamText).mockReturnValue(
+      createMockStreamResult(["First response"], "cc-session-abc"),
+    );
+
+    const handler = createMessageHandler({
+      channelMap,
+      sessions,
+      ccSessions,
+      model: "sonnet",
+    });
+
+    // First message in thread
+    const { args: firstArgs } = createMockBoltArgs("C123", "first message", {
+      ts: "1000.0001",
+    });
+    await handler(firstArgs);
+
+    // Verify first call does NOT include resume
+    expect(claudeCode).toHaveBeenCalledWith("sonnet", {
+      cwd: "/tmp/test-project",
+      permissionMode: "bypassPermissions",
+    });
+
+    // Second message: reply in same thread
+    vi.mocked(claudeCode).mockClear();
+    vi.mocked(streamText).mockReturnValue(
+      createMockStreamResult(["Second response"], "cc-session-abc"),
+    );
+
+    const { args: secondArgs } = createMockBoltArgs("C123", "follow up", {
+      ts: "1000.0002",
+      thread_ts: "1000.0001",
+    });
+    await handler(secondArgs);
+
+    // Verify second call includes resume with session ID
+    expect(claudeCode).toHaveBeenCalledWith("sonnet", {
+      cwd: "/tmp/test-project",
+      permissionMode: "bypassPermissions",
+      resume: "cc-session-abc",
+    });
+  });
+
+  it("starts fresh session for new thread (no resume)", async () => {
+    const channelMap: ChannelProjectMap = new Map([
+      ["C123", "/tmp/test-project"],
+    ]);
+    const sessions: SessionMap = new Map();
+    const ccSessions = createCcSessionStore();
+    const mockModel = { id: "mock-claude-code-model" };
+
+    vi.mocked(claudeCode).mockReturnValue(
+      mockModel as unknown as ReturnType<typeof claudeCode>,
+    );
+    vi.mocked(streamText).mockReturnValue(
+      createMockStreamResult(["Hello"]),
+    );
+
+    const handler = createMessageHandler({
+      channelMap,
+      sessions,
+      ccSessions,
+      model: "sonnet",
+    });
+
+    const { args } = createMockBoltArgs("C123", "brand new thread", {
+      ts: "9999.0001",
+    });
+    await handler(args);
+
+    // Should not include resume option
+    expect(claudeCode).toHaveBeenCalledWith("sonnet", {
+      cwd: "/tmp/test-project",
+      permissionMode: "bypassPermissions",
+    });
+  });
+
+  it("/project set updates channel map and responds", async () => {
+    const channelMap: ChannelProjectMap = new Map();
+    const sessions: SessionMap = new Map();
+    const ccSessions = createCcSessionStore();
+
+    const handler = createMessageHandler({
+      channelMap,
+      sessions,
+      ccSessions,
+    });
+
+    const { args, say } = createMockBoltArgs(
+      "C123",
+      "/project set /home/user/new-project",
+    );
+    await handler(args);
+
+    // Channel map should be updated
+    expect(channelMap.get("C123")).toBe("/home/user/new-project");
+
+    // Should respond with confirmation
+    expect(say).toHaveBeenCalledWith(
+      expect.objectContaining({
+        text: expect.stringContaining("/home/user/new-project"),
+      }),
+    );
+
+    // Should NOT call streamText (slash command short-circuits)
+    expect(streamText).not.toHaveBeenCalled();
+  });
 });
 
 describe("splitAtParagraphs", () => {
