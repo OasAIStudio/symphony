@@ -87,10 +87,13 @@ async function* createAsyncIterable(chunks: string[]): AsyncIterable<string> {
 
 describe("Reaction lifecycle", () => {
   beforeEach(() => {
-    vi.mocked(StreamConsumer).mockImplementation(() => ({
-      append: vi.fn().mockResolvedValue(undefined),
-      finish: vi.fn().mockResolvedValue(undefined),
-    }) as unknown as StreamConsumer);
+    vi.mocked(StreamConsumer).mockImplementation(
+      () =>
+        ({
+          append: vi.fn().mockResolvedValue(undefined),
+          finish: vi.fn().mockResolvedValue(undefined),
+        }) as unknown as StreamConsumer,
+    );
   });
 
   afterEach(() => {

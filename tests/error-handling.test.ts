@@ -77,10 +77,13 @@ function createMockBoltArgs(
 
 describe("Error handling", () => {
   beforeEach(() => {
-    vi.mocked(StreamConsumer).mockImplementation(() => ({
-      append: vi.fn().mockResolvedValue(undefined),
-      finish: vi.fn().mockResolvedValue(undefined),
-    }) as unknown as StreamConsumer);
+    vi.mocked(StreamConsumer).mockImplementation(
+      () =>
+        ({
+          append: vi.fn().mockResolvedValue(undefined),
+          finish: vi.fn().mockResolvedValue(undefined),
+        }) as unknown as StreamConsumer,
+    );
   });
 
   afterEach(() => {

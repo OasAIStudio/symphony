@@ -13,10 +13,10 @@ import { streamText } from "ai";
 import { claudeCode } from "ai-sdk-provider-claude-code";
 
 import {
-	markError,
-	markProcessing,
-	markSuccess,
-	markWarning,
+  markError,
+  markProcessing,
+  markSuccess,
+  markWarning,
 } from "../reactions.js";
 import { resolveClaudeModelId } from "../runners/claude-code-runner.js";
 import { markdownToMrkdwn } from "./format.js";
@@ -27,19 +27,19 @@ import { StreamConsumer } from "./stream-consumer.js";
 import type { ChannelProjectMap, SessionMap } from "./types.js";
 
 export interface HandleMessageOptions {
-	/** Channel ID → project directory mapping */
-	channelMap: ChannelProjectMap;
-	/** In-memory session store */
-	sessions: SessionMap;
-	/** In-memory CC session store (thread ID → CC session ID) */
-	ccSessions: CcSessionStore;
-	/** Claude Code model identifier (default: "sonnet") */
-	model?: string;
+  /** Channel ID → project directory mapping */
+  channelMap: ChannelProjectMap;
+  /** In-memory session store */
+  sessions: SessionMap;
+  /** In-memory CC session store (thread ID → CC session ID) */
+  ccSessions: CcSessionStore;
+  /** Claude Code model identifier (default: "sonnet") */
+  model?: string;
 }
 
 /** Bolt message handler arguments. */
 export type BoltMessageArgs = SlackEventMiddlewareArgs<"message"> &
-	AllMiddlewareArgs;
+  AllMiddlewareArgs;
 
 /**
  * Split a response into paragraph-sized chunks at `\n\n` boundaries.
@@ -49,194 +49,185 @@ export type BoltMessageArgs = SlackEventMiddlewareArgs<"message"> &
  * enforces the 39,000 character Slack message limit.
  */
 export function splitAtParagraphs(text: string): string[] {
-	const chunks = text
-		.split(/\n\n+/)
-		.filter((chunk) => chunk.trim().length > 0);
-	return chunks.length > 0 ? chunks : [text];
+  const chunks = text.split(/\n\n+/).filter((chunk) => chunk.trim().length > 0);
+  return chunks.length > 0 ? chunks : [text];
 }
 
 /** Truncate a string to a maximum length, adding ellipsis if truncated. */
 function truncateDetail(detail: string, maxLength = 500): string {
-	if (detail.length <= maxLength) {
-		return detail;
-	}
-	return `${detail.slice(0, maxLength)}…`;
+  if (detail.length <= maxLength) {
+    return detail;
+  }
+  return `${detail.slice(0, maxLength)}…`;
 }
 
 /**
  * Set the assistant thread status (best-effort, silent no-op if scope unavailable).
  */
 async function setThinkingStatus(
-	client: WebClient,
-	channel: string,
-	threadTs: string,
+  client: WebClient,
+  channel: string,
+  threadTs: string,
 ): Promise<void> {
-	try {
-		await client.assistant.threads.setStatus({
-			channel_id: channel,
-			thread_ts: threadTs,
-			status: "is thinking...",
-		});
-	} catch {
-		// Silent no-op — scope may not be available
-	}
+  try {
+    await client.assistant.threads.setStatus({
+      channel_id: channel,
+      thread_ts: threadTs,
+      status: "is thinking...",
+    });
+  } catch {
+    // Silent no-op — scope may not be available
+  }
 }
 
 /**
  * Creates a message handler function for use with `app.message()`.
  */
 export function createMessageHandler(options: HandleMessageOptions) {
-	const { channelMap, sessions, ccSessions, model = "sonnet" } = options;
+  const { channelMap, sessions, ccSessions, model = "sonnet" } = options;
 
-	return async (args: BoltMessageArgs): Promise<void> => {
-		const { message, say, client, context } = args;
+  return async (args: BoltMessageArgs): Promise<void> => {
+    const { message, say, client, context } = args;
 
-		// Filter bot's own messages and message updates/deletions
-		const subtype = "subtype" in message ? message.subtype : undefined;
-		if (
-			"bot_id" in message ||
-			subtype === "bot_message" ||
-			subtype === "message_changed" ||
-			subtype === "message_deleted"
-		) {
-			return;
-		}
+    // Filter bot's own messages and message updates/deletions
+    const subtype = "subtype" in message ? message.subtype : undefined;
+    if (
+      "bot_id" in message ||
+      subtype === "bot_message" ||
+      subtype === "message_changed" ||
+      subtype === "message_deleted"
+    ) {
+      return;
+    }
 
-		// Extract message text — only present on GenericMessageEvent (no subtype)
-		const text = "text" in message ? (message.text ?? "") : "";
+    // Extract message text — only present on GenericMessageEvent (no subtype)
+    const text = "text" in message ? (message.text ?? "") : "";
 
-		// Derive thread and message identifiers
-		const threadTs =
-			"thread_ts" in message
-				? (message.thread_ts ?? message.ts)
-				: message.ts;
-		const messageTs = message.ts;
-		const channel = message.channel;
+    // Derive thread and message identifiers
+    const threadTs =
+      "thread_ts" in message ? (message.thread_ts ?? message.ts) : message.ts;
+    const messageTs = message.ts;
+    const channel = message.channel;
 
-		// Extract user and team IDs for streaming
-		const userId = "user" in message ? (message.user as string) : "";
-		const teamId = context.teamId;
+    // Extract user and team IDs for streaming
+    const userId = "user" in message ? (message.user as string) : "";
+    const teamId = context.teamId;
 
-		// Check for slash commands before anything else
-		const command = parseSlashCommand(text);
-		if (command) {
-			if (command.type === "project-set") {
-				channelMap.set(channel, command.path);
-				await say({
-					text: markdownToMrkdwn(
-						`Project directory for this channel set to \`${command.path}\`.`,
-					),
-					thread_ts: threadTs,
-				});
-			}
-			return;
-		}
+    // Check for slash commands before anything else
+    const command = parseSlashCommand(text);
+    if (command) {
+      if (command.type === "project-set") {
+        channelMap.set(channel, command.path);
+        await say({
+          text: markdownToMrkdwn(
+            `Project directory for this channel set to \`${command.path}\`.`,
+          ),
+          thread_ts: threadTs,
+        });
+      }
+      return;
+    }
 
-		// Add eyes reaction to indicate processing
-		await markProcessing(client, channel, messageTs);
+    // Add eyes reaction to indicate processing
+    await markProcessing(client, channel, messageTs);
 
-		try {
-			// Resolve channel → project directory
-			const projectDir = channelMap.get(channel);
-			if (!projectDir) {
-				await say({
-					text: markdownToMrkdwn(
-						`No project directory mapped for channel \`${channel}\`. Please configure a channel-to-project mapping.`,
-					),
-					thread_ts: threadTs,
-				});
-				await markWarning(client, channel, messageTs);
-				return;
-			}
+    try {
+      // Resolve channel → project directory
+      const projectDir = channelMap.get(channel);
+      if (!projectDir) {
+        await say({
+          text: markdownToMrkdwn(
+            `No project directory mapped for channel \`${channel}\`. Please configure a channel-to-project mapping.`,
+          ),
+          thread_ts: threadTs,
+        });
+        await markWarning(client, channel, messageTs);
+        return;
+      }
 
-			// Track session
-			sessions.set(threadTs, {
-				channelId: channel,
-				projectDir,
-				lastActiveAt: new Date(),
-			});
+      // Track session
+      sessions.set(threadTs, {
+        channelId: channel,
+        projectDir,
+        lastActiveAt: new Date(),
+      });
 
-			// Build CC provider options with session continuity
-			const resolvedModel = resolveClaudeModelId(model);
-			const existingSessionId = getCcSessionId(ccSessions, threadTs);
-			const ccOptions: {
-				cwd: string;
-				permissionMode: "bypassPermissions";
-				resume?: string;
-			} = {
-				cwd: projectDir,
-				permissionMode: "bypassPermissions",
-			};
-			if (existingSessionId) {
-				ccOptions.resume = existingSessionId;
-			}
+      // Build CC provider options with session continuity
+      const resolvedModel = resolveClaudeModelId(model);
+      const existingSessionId = getCcSessionId(ccSessions, threadTs);
+      const ccOptions: {
+        cwd: string;
+        permissionMode: "bypassPermissions";
+        resume?: string;
+      } = {
+        cwd: projectDir,
+        permissionMode: "bypassPermissions",
+      };
+      if (existingSessionId) {
+        ccOptions.resume = existingSessionId;
+      }
 
-			// Set "is thinking..." status (best-effort)
-			await setThinkingStatus(
-				client as unknown as WebClient,
-				channel,
-				threadTs,
-			);
+      // Set "is thinking..." status (best-effort)
+      await setThinkingStatus(
+        client as unknown as WebClient,
+        channel,
+        threadTs,
+      );
 
-			// Invoke Claude Code via AI SDK streamText
-			const result = streamText({
-				model: claudeCode(resolvedModel, ccOptions),
-				prompt: text,
-			});
+      // Invoke Claude Code via AI SDK streamText
+      const result = streamText({
+        model: claudeCode(resolvedModel, ccOptions),
+        prompt: text,
+      });
 
-			// Progressively stream response via Slack ChatStreamer
-			const consumer = new StreamConsumer(
-				client as unknown as WebClient,
-				channel,
-				threadTs,
-				userId,
-				teamId,
-			);
-			try {
-				for await (const chunk of result.textStream) {
-					await consumer.append(chunk);
-				}
-				await consumer.finish();
-			} catch (error) {
-				await consumer.finish(); // ensure cleanup
-				throw error;
-			}
+      // Progressively stream response via Slack ChatStreamer
+      const consumer = new StreamConsumer(
+        client as unknown as WebClient,
+        channel,
+        threadTs,
+        userId,
+        teamId,
+      );
+      try {
+        for await (const chunk of result.textStream) {
+          await consumer.append(chunk);
+        }
+        await consumer.finish();
+      } catch (error) {
+        await consumer.finish(); // ensure cleanup
+        throw error;
+      }
 
-			// Extract and store session ID from provider metadata for continuity
-			const response = await result.response;
-			const lastMsg = response.messages?.[
-				response.messages.length - 1
-			] as
-				| {
-						providerMetadata?: {
-							"claude-code"?: { sessionId?: string };
-						};
-				  }
-				| undefined;
-			const ccSessionId =
-				lastMsg?.providerMetadata?.["claude-code"]?.sessionId;
-			if (ccSessionId) {
-				setCcSessionId(ccSessions, threadTs, ccSessionId);
-			}
+      // Extract and store session ID from provider metadata for continuity
+      const response = await result.response;
+      const lastMsg = response.messages?.[response.messages.length - 1] as
+        | {
+            providerMetadata?: {
+              "claude-code"?: { sessionId?: string };
+            };
+          }
+        | undefined;
+      const ccSessionId = lastMsg?.providerMetadata?.["claude-code"]?.sessionId;
+      if (ccSessionId) {
+        setCcSessionId(ccSessions, threadTs, ccSessionId);
+      }
 
-			// Replace eyes with checkmark on success
-			await markSuccess(client, channel, messageTs);
-		} catch (error) {
-			// Replace eyes with error indicator on failure
-			await markError(client, channel, messageTs);
+      // Replace eyes with checkmark on success
+      await markSuccess(client, channel, messageTs);
+    } catch (error) {
+      // Replace eyes with error indicator on failure
+      await markError(client, channel, messageTs);
 
-			const errorType =
-				error instanceof Error ? error.constructor.name : "Error";
-			const errorDetail =
-				error instanceof Error
-					? error.message
-					: "An unexpected error occurred";
-			await say({
-				text: markdownToMrkdwn(
-					`Error: ${errorType}\n${truncateDetail(errorDetail)}`,
-				),
-				thread_ts: threadTs,
-			});
-		}
-	};
+      const errorType =
+        error instanceof Error ? error.constructor.name : "Error";
+      const errorDetail =
+        error instanceof Error ? error.message : "An unexpected error occurred";
+      await say({
+        text: markdownToMrkdwn(
+          `Error: ${errorType}\n${truncateDetail(errorDetail)}`,
+        ),
+        thread_ts: threadTs,
+      });
+    }
+  };
 }
