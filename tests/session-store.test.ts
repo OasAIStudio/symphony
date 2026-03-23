@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 // Mock the AI SDK modules before importing handler
 vi.mock("ai", () => ({
@@ -7,6 +7,13 @@ vi.mock("ai", () => ({
 
 vi.mock("ai-sdk-provider-claude-code", () => ({
   claudeCode: vi.fn(),
+}));
+
+vi.mock("../src/slack-bot/stream-consumer.js", () => ({
+  StreamConsumer: vi.fn().mockImplementation(() => ({
+    append: vi.fn().mockResolvedValue(undefined),
+    finish: vi.fn().mockResolvedValue(undefined),
+  })),
 }));
 
 import { streamText } from "ai";
@@ -19,6 +26,7 @@ import {
   getCcSessionId,
   setCcSessionId,
 } from "../src/slack-bot/session-store.js";
+import { StreamConsumer } from "../src/slack-bot/stream-consumer.js";
 import type { ChannelProjectMap, SessionMap } from "../src/slack-bot/types.js";
 
 /** Create a mock Bolt message args object. */
@@ -45,6 +53,11 @@ function createMockBoltArgs(
       add: vi.fn().mockResolvedValue(undefined),
       remove: vi.fn().mockResolvedValue(undefined),
     },
+    assistant: {
+      threads: {
+        setStatus: vi.fn().mockResolvedValue(undefined),
+      },
+    },
   };
 
   const message: Record<string, unknown> = {
@@ -52,6 +65,7 @@ function createMockBoltArgs(
     text,
     ts: overrides?.ts ?? "1234.5678",
     channel: channelId,
+    user: "U_TEST_USER",
   };
   if (overrides?.thread_ts) {
     message.thread_ts = overrides.thread_ts;
@@ -61,7 +75,7 @@ function createMockBoltArgs(
     message,
     say,
     client,
-    context: {},
+    context: { teamId: "T_TEST_TEAM" },
     logger: { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() },
     next: vi.fn(),
     event: message,
@@ -121,6 +135,16 @@ describe("CcSessionStore", () => {
 });
 
 describe("Session continuity in handler", () => {
+  beforeEach(() => {
+    vi.mocked(StreamConsumer).mockImplementation(
+      () =>
+        ({
+          append: vi.fn().mockResolvedValue(undefined),
+          finish: vi.fn().mockResolvedValue(undefined),
+        }) as unknown as StreamConsumer,
+    );
+  });
+
   afterEach(() => {
     vi.restoreAllMocks();
   });

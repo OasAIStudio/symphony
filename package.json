@@ -53,6 +53,7 @@
     "@google/gemini-cli-core": "^0.33.2",
     "@google/genai": "^1.45.0",
     "@slack/bolt": "^4.6.0",
+    "@slack/web-api": "^7.15.0",
     "ai": "^6.0.116",
     "ai-sdk-provider-claude-code": "^3.4.4",
     "ai-sdk-provider-gemini-cli": "^2.0.1",

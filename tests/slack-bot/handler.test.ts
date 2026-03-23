@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 // Mock the AI SDK modules before importing handler
 vi.mock("ai", () => ({
@@ -7,6 +7,13 @@ vi.mock("ai", () => ({
 
 vi.mock("ai-sdk-provider-claude-code", () => ({
   claudeCode: vi.fn(),
+}));
+
+vi.mock("../../src/slack-bot/stream-consumer.js", () => ({
+  StreamConsumer: vi.fn().mockImplementation(() => ({
+    append: vi.fn().mockResolvedValue(undefined),
+    finish: vi.fn().mockResolvedValue(undefined),
+  })),
 }));
 
 import { streamText } from "ai";
@@ -18,6 +25,7 @@ import {
   splitAtParagraphs,
 } from "../../src/slack-bot/handler.js";
 import { createCcSessionStore } from "../../src/slack-bot/session-store.js";
+import { StreamConsumer } from "../../src/slack-bot/stream-consumer.js";
 import type {
   ChannelProjectMap,
   SessionMap,
@@ -32,6 +40,8 @@ function createMockBoltArgs(
     thread_ts: string;
     bot_id: string;
     subtype: string;
+    user: string;
+    teamId: string;
   }>,
 ): {
   args: BoltMessageArgs;
@@ -41,6 +51,11 @@ function createMockBoltArgs(
       add: ReturnType<typeof vi.fn>;
       remove: ReturnType<typeof vi.fn>;
     };
+    assistant: {
+      threads: {
+        setStatus: ReturnType<typeof vi.fn>;
+      };
+    };
   };
 } {
   const say = vi.fn().mockResolvedValue(undefined);
@@ -49,6 +64,11 @@ function createMockBoltArgs(
       add: vi.fn().mockResolvedValue(undefined),
       remove: vi.fn().mockResolvedValue(undefined),
     },
+    assistant: {
+      threads: {
+        setStatus: vi.fn().mockResolvedValue(undefined),
+      },
+    },
   };
 
   const message: Record<string, unknown> = {
@@ -56,6 +76,7 @@ function createMockBoltArgs(
     text,
     ts: overrides?.ts ?? "1234.5678",
     channel: channelId,
+    user: overrides?.user ?? "U_TEST_USER",
   };
   if (overrides?.thread_ts) {
     message.thread_ts = overrides.thread_ts;
@@ -71,8 +92,13 @@ function createMockBoltArgs(
     message,
     say,
     client,
-    context: {},
-    logger: { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() },
+    context: { teamId: overrides?.teamId ?? "T_TEST_TEAM" },
+    logger: {
+      debug: vi.fn(),
+      info: vi.fn(),
+      warn: vi.fn(),
+      error: vi.fn(),
+    },
     next: vi.fn(),
     event: message,
     payload: message,
@@ -101,6 +127,17 @@ function createMockStreamResult(chunks: string[], sessionId?: string) {
 }
 
 describe("createMessageHandler", () => {
+  beforeEach(() => {
+    // Re-establish StreamConsumer mock implementation (restoreAllMocks clears it)
+    vi.mocked(StreamConsumer).mockImplementation(
+      () =>
+        ({
+          append: vi.fn().mockResolvedValue(undefined),
+          finish: vi.fn().mockResolvedValue(undefined),
+        }) as unknown as StreamConsumer,
+    );
+  });
+
   afterEach(() => {
     vi.restoreAllMocks();
   });
@@ -146,7 +183,7 @@ describe("createMessageHandler", () => {
     });
   });
 
-  it("posts response as a threaded reply via say()", async () => {
+  it("uses StreamConsumer for progressive streaming", async () => {
     const channelMap: ChannelProjectMap = new Map([
       ["C123", "/tmp/test-project"],
     ]);
@@ -158,22 +195,72 @@ describe("createMessageHandler", () => {
       mockModel as unknown as ReturnType<typeof claudeCode>,
     );
     vi.mocked(streamText).mockReturnValue(
-      createMockStreamResult(["Here are the files"]),
+      createMockStreamResult(["Hello", " world"]),
     );
 
-    const handler = createMessageHandler({ channelMap, sessions, ccSessions });
+    const handler = createMessageHandler({
+      channelMap,
+      sessions,
+      ccSessions,
+    });
 
-    const { args, say } = createMockBoltArgs("C123", "What files?");
+    const { args } = createMockBoltArgs("C123", "What files?");
     await handler(args);
 
-    // Verify response was posted as a thread reply
-    expect(say).toHaveBeenCalledWith({
-      text: "Here are the files",
+    // Verify StreamConsumer was constructed with correct params
+    expect(StreamConsumer).toHaveBeenCalledWith(
+      expect.anything(), // client
+      "C123", // channel
+      "1234.5678", // threadTs
+      "U_TEST_USER", // userId
+      "T_TEST_TEAM", // teamId
+    );
+
+    // Get the mock instance from the constructor's return value
+    const consumerInstance = vi.mocked(StreamConsumer).mock.results[0]!
+      .value as {
+      append: ReturnType<typeof vi.fn>;
+      finish: ReturnType<typeof vi.fn>;
+    };
+
+    // Verify append was called for each chunk
+    expect(consumerInstance.append).toHaveBeenCalledWith("Hello");
+    expect(consumerInstance.append).toHaveBeenCalledWith(" world");
+
+    // Verify finish was called
+    expect(consumerInstance.finish).toHaveBeenCalled();
+  });
+
+  it("sets thinking status before streaming", async () => {
+    const channelMap: ChannelProjectMap = new Map([
+      ["C123", "/tmp/test-project"],
+    ]);
+    const sessions: SessionMap = new Map();
+    const ccSessions = createCcSessionStore();
+    const mockModel = { id: "mock-claude-code-model" };
+
+    vi.mocked(claudeCode).mockReturnValue(
+      mockModel as unknown as ReturnType<typeof claudeCode>,
+    );
+    vi.mocked(streamText).mockReturnValue(createMockStreamResult(["OK"]));
+
+    const handler = createMessageHandler({
+      channelMap,
+      sessions,
+      ccSessions,
+    });
+
+    const { args, client } = createMockBoltArgs("C123", "test");
+    await handler(args);
+
+    expect(client.assistant.threads.setStatus).toHaveBeenCalledWith({
+      channel_id: "C123",
       thread_ts: "1234.5678",
+      status: "is thinking...",
     });
   });
 
-  it("splits multi-paragraph responses into separate thread posts when they exceed chunk limit", async () => {
+  it("silently handles setStatus failure", async () => {
     const channelMap: ChannelProjectMap = new Map([
       ["C123", "/tmp/test-project"],
     ]);
@@ -184,25 +271,21 @@ describe("createMessageHandler", () => {
     vi.mocked(claudeCode).mockReturnValue(
       mockModel as unknown as ReturnType<typeof claudeCode>,
     );
+    vi.mocked(streamText).mockReturnValue(createMockStreamResult(["OK"]));
 
-    // Small paragraphs that fit in a single chunk are posted together
-    vi.mocked(streamText).mockReturnValue(
-      createMockStreamResult([
-        "First paragraph.\n\nSecond paragraph.\n\nThird paragraph.",
-      ]),
+    const handler = createMessageHandler({
+      channelMap,
+      sessions,
+      ccSessions,
+    });
+
+    const { args, client } = createMockBoltArgs("C123", "test");
+    client.assistant.threads.setStatus.mockRejectedValue(
+      new Error("missing_scope"),
     );
 
-    const handler = createMessageHandler({ channelMap, sessions, ccSessions });
-
-    const { args, say } = createMockBoltArgs("C123", "Tell me about files");
+    // Should not throw
     await handler(args);
-
-    // Small paragraphs are combined into a single chunk (under 39K limit)
-    expect(say).toHaveBeenCalledTimes(1);
-    expect(say).toHaveBeenCalledWith({
-      text: "First paragraph.\n\nSecond paragraph.\n\nThird paragraph.",
-      thread_ts: "1234.5678",
-    });
   });
 
   it("uses bypassPermissions for all CC invocations", async () => {
@@ -218,7 +301,11 @@ describe("createMessageHandler", () => {
     );
     vi.mocked(streamText).mockReturnValue(createMockStreamResult(["OK"]));
 
-    const handler = createMessageHandler({ channelMap, sessions, ccSessions });
+    const handler = createMessageHandler({
+      channelMap,
+      sessions,
+      ccSessions,
+    });
     const { args } = createMockBoltArgs("C123", "test");
     await handler(args);
 
@@ -233,7 +320,11 @@ describe("createMessageHandler", () => {
     const sessions: SessionMap = new Map();
     const ccSessions = createCcSessionStore();
 
-    const handler = createMessageHandler({ channelMap, sessions, ccSessions });
+    const handler = createMessageHandler({
+      channelMap,
+      sessions,
+      ccSessions,
+    });
     const { args, say, client } = createMockBoltArgs("C999", "hello");
     await handler(args);
 
@@ -251,7 +342,7 @@ describe("createMessageHandler", () => {
     );
   });
 
-  it("handles streamText errors by posting error message in thread", async () => {
+  it("handles streamText errors by posting structured error message", async () => {
     const channelMap: ChannelProjectMap = new Map([
       ["C123", "/tmp/test-project"],
     ]);
@@ -279,14 +370,23 @@ describe("createMessageHandler", () => {
       response: Promise.resolve({ messages: [] }),
     } as unknown as ReturnType<typeof streamText>);
 
-    const handler = createMessageHandler({ channelMap, sessions, ccSessions });
+    const handler = createMessageHandler({
+      channelMap,
+      sessions,
+      ccSessions,
+    });
     const { args, say, client } = createMockBoltArgs("C123", "test");
     await handler(args);
 
-    // Should post error message
+    // Should post structured error message
     expect(say).toHaveBeenCalledWith(
       expect.objectContaining({
-        text: "Error: Claude Code failed",
+        text: expect.stringContaining("Error:"),
+      }),
+    );
+    expect(say).toHaveBeenCalledWith(
+      expect.objectContaining({
+        text: expect.stringContaining("Claude Code failed"),
       }),
     );
     // Should replace eyes with x
@@ -296,6 +396,49 @@ describe("createMessageHandler", () => {
     expect(client.reactions.add).toHaveBeenCalledWith(
       expect.objectContaining({ name: "x" }),
     );
+  });
+
+  it("cleans up StreamConsumer on error", async () => {
+    const channelMap: ChannelProjectMap = new Map([
+      ["C123", "/tmp/test-project"],
+    ]);
+    const sessions: SessionMap = new Map();
+    const ccSessions = createCcSessionStore();
+    const mockModel = { id: "mock-claude-code-model" };
+
+    vi.mocked(claudeCode).mockReturnValue(
+      mockModel as unknown as ReturnType<typeof claudeCode>,
+    );
+
+    const failingStream: AsyncIterable<string> = {
+      [Symbol.asyncIterator]() {
+        return {
+          async next(): Promise<IteratorResult<string>> {
+            throw new Error("stream error");
+          },
+        };
+      },
+    };
+
+    vi.mocked(streamText).mockReturnValue({
+      textStream: failingStream,
+      response: Promise.resolve({ messages: [] }),
+    } as unknown as ReturnType<typeof streamText>);
+
+    const handler = createMessageHandler({
+      channelMap,
+      sessions,
+      ccSessions,
+    });
+    const { args } = createMockBoltArgs("C123", "test");
+    await handler(args);
+
+    // Get the mock instance from the constructor's return value
+    const consumerInstance = vi.mocked(StreamConsumer).mock.results[0]!
+      .value as { finish: ReturnType<typeof vi.fn> };
+
+    // finish should have been called for cleanup
+    expect(consumerInstance.finish).toHaveBeenCalled();
   });
 
   it("tracks session state in the sessions map", async () => {
@@ -311,7 +454,11 @@ describe("createMessageHandler", () => {
     );
     vi.mocked(streamText).mockReturnValue(createMockStreamResult(["OK"]));
 
-    const handler = createMessageHandler({ channelMap, sessions, ccSessions });
+    const handler = createMessageHandler({
+      channelMap,
+      sessions,
+      ccSessions,
+    });
     const { args } = createMockBoltArgs("C123", "test");
     await handler(args);
 
@@ -329,7 +476,11 @@ describe("createMessageHandler", () => {
     const sessions: SessionMap = new Map();
     const ccSessions = createCcSessionStore();
 
-    const handler = createMessageHandler({ channelMap, sessions, ccSessions });
+    const handler = createMessageHandler({
+      channelMap,
+      sessions,
+      ccSessions,
+    });
     const { args, say } = createMockBoltArgs("C123", "bot message", {
       bot_id: "B123",
     });
@@ -345,7 +496,11 @@ describe("createMessageHandler", () => {
     const sessions: SessionMap = new Map();
     const ccSessions = createCcSessionStore();
 
-    const handler = createMessageHandler({ channelMap, sessions, ccSessions });
+    const handler = createMessageHandler({
+      channelMap,
+      sessions,
+      ccSessions,
+    });
     const { args, say } = createMockBoltArgs("C123", "edited", {
       subtype: "message_changed",
     });
@@ -361,7 +516,11 @@ describe("createMessageHandler", () => {
     const sessions: SessionMap = new Map();
     const ccSessions = createCcSessionStore();
 
-    const handler = createMessageHandler({ channelMap, sessions, ccSessions });
+    const handler = createMessageHandler({
+      channelMap,
+      sessions,
+      ccSessions,
+    });
     const { args, say } = createMockBoltArgs("C123", "", {
       subtype: "message_deleted",
     });

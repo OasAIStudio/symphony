@@ -2,15 +2,16 @@
  * Core message handler for the Slack bot.
  *
  * Receives messages via Bolt's app.message() listener, manages reaction indicators,
- * invokes Claude Code via the AI SDK streamText, and posts threaded replies.
+ * invokes Claude Code via the AI SDK streamText, and progressively streams replies
+ * using Slack's ChatStreamer API.
  * Supports session continuity (thread replies resume CC sessions) and
  * runtime channel-to-project mapping via /project set slash commands.
  */
 import type { AllMiddlewareArgs, SlackEventMiddlewareArgs } from "@slack/bolt";
+import type { WebClient } from "@slack/web-api";
 import { streamText } from "ai";
 import { claudeCode } from "ai-sdk-provider-claude-code";
 
-import { chunkResponse } from "../chunking.js";
 import {
   markError,
   markProcessing,
@@ -18,10 +19,11 @@ import {
   markWarning,
 } from "../reactions.js";
 import { resolveClaudeModelId } from "../runners/claude-code-runner.js";
-import { collectStream } from "../streaming.js";
+import { markdownToMrkdwn } from "./format.js";
 import type { CcSessionStore } from "./session-store.js";
 import { getCcSessionId, setCcSessionId } from "./session-store.js";
 import { parseSlashCommand } from "./slash-commands.js";
+import { StreamConsumer } from "./stream-consumer.js";
 import type { ChannelProjectMap, SessionMap } from "./types.js";
 
 export interface HandleMessageOptions {
@@ -51,6 +53,33 @@ export function splitAtParagraphs(text: string): string[] {
   return chunks.length > 0 ? chunks : [text];
 }
 
+/** Truncate a string to a maximum length, adding ellipsis if truncated. */
+function truncateDetail(detail: string, maxLength = 500): string {
+  if (detail.length <= maxLength) {
+    return detail;
+  }
+  return `${detail.slice(0, maxLength)}…`;
+}
+
+/**
+ * Set the assistant thread status (best-effort, silent no-op if scope unavailable).
+ */
+async function setThinkingStatus(
+  client: WebClient,
+  channel: string,
+  threadTs: string,
+): Promise<void> {
+  try {
+    await client.assistant.threads.setStatus({
+      channel_id: channel,
+      thread_ts: threadTs,
+      status: "is thinking...",
+    });
+  } catch {
+    // Silent no-op — scope may not be available
+  }
+}
+
 /**
  * Creates a message handler function for use with `app.message()`.
  */
@@ -58,7 +87,7 @@ export function createMessageHandler(options: HandleMessageOptions) {
   const { channelMap, sessions, ccSessions, model = "sonnet" } = options;
 
   return async (args: BoltMessageArgs): Promise<void> => {
-    const { message, say, client } = args;
+    const { message, say, client, context } = args;
 
     // Filter bot's own messages and message updates/deletions
     const subtype = "subtype" in message ? message.subtype : undefined;
@@ -80,13 +109,19 @@ export function createMessageHandler(options: HandleMessageOptions) {
     const messageTs = message.ts;
     const channel = message.channel;
 
+    // Extract user and team IDs for streaming
+    const userId = "user" in message ? (message.user as string) : "";
+    const teamId = context.teamId;
+
     // Check for slash commands before anything else
     const command = parseSlashCommand(text);
     if (command) {
       if (command.type === "project-set") {
         channelMap.set(channel, command.path);
         await say({
-          text: `Project directory for this channel set to \`${command.path}\`.`,
+          text: markdownToMrkdwn(
+            `Project directory for this channel set to \`${command.path}\`.`,
+          ),
           thread_ts: threadTs,
         });
       }
@@ -101,7 +136,9 @@ export function createMessageHandler(options: HandleMessageOptions) {
       const projectDir = channelMap.get(channel);
       if (!projectDir) {
         await say({
-          text: `No project directory mapped for channel \`${channel}\`. Please configure a channel-to-project mapping.`,
+          text: markdownToMrkdwn(
+            `No project directory mapped for channel \`${channel}\`. Please configure a channel-to-project mapping.`,
+          ),
           thread_ts: threadTs,
         });
         await markWarning(client, channel, messageTs);
@@ -130,29 +167,49 @@ export function createMessageHandler(options: HandleMessageOptions) {
         ccOptions.resume = existingSessionId;
       }
 
+      // Set "is thinking..." status (best-effort)
+      await setThinkingStatus(
+        client as unknown as WebClient,
+        channel,
+        threadTs,
+      );
+
       // Invoke Claude Code via AI SDK streamText
       const result = streamText({
         model: claudeCode(resolvedModel, ccOptions),
         prompt: text,
       });
 
-      // Collect full response text via streaming utility
-      const fullText = await collectStream(result.textStream);
+      // Progressively stream response via Slack ChatStreamer
+      const consumer = new StreamConsumer(
+        client as unknown as WebClient,
+        channel,
+        threadTs,
+        userId,
+        teamId,
+      );
+      try {
+        for await (const chunk of result.textStream) {
+          await consumer.append(chunk);
+        }
+        await consumer.finish();
+      } catch (error) {
+        await consumer.finish(); // ensure cleanup
+        throw error;
+      }
 
       // Extract and store session ID from provider metadata for continuity
       const response = await result.response;
       const lastMsg = response.messages?.[response.messages.length - 1] as
-        | { providerMetadata?: { "claude-code"?: { sessionId?: string } } }
+        | {
+            providerMetadata?: {
+              "claude-code"?: { sessionId?: string };
+            };
+          }
         | undefined;
       const ccSessionId = lastMsg?.providerMetadata?.["claude-code"]?.sessionId;
       if (ccSessionId) {
         setCcSessionId(ccSessions, threadTs, ccSessionId);
-      }
-
-      // Split at paragraph boundaries respecting Slack's 39K char limit
-      const chunks = chunkResponse(fullText);
-      for (const chunk of chunks) {
-        await say({ text: chunk, thread_ts: threadTs });
       }
 
       // Replace eyes with checkmark on success
@@ -161,9 +218,16 @@ export function createMessageHandler(options: HandleMessageOptions) {
       // Replace eyes with error indicator on failure
       await markError(client, channel, messageTs);
 
-      const errorMessage =
+      const errorType =
+        error instanceof Error ? error.constructor.name : "Error";
+      const errorDetail =
         error instanceof Error ? error.message : "An unexpected error occurred";
-      await say({ text: `Error: ${errorMessage}`, thread_ts: threadTs });
+      await say({
+        text: markdownToMrkdwn(
+          `Error: ${errorType}\n${truncateDetail(errorDetail)}`,
+        ),
+        thread_ts: threadTs,
+      });
     }
   };
 }

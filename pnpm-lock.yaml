@@ -20,6 +20,9 @@ importers:
       '@slack/bolt':
         specifier: ^4.6.0
         version: 4.6.0(@types/express@5.0.6)
+      '@slack/web-api':
+        specifier: ^7.15.0
+        version: 7.15.0
       ai:
         specifier: ^6.0.116
         version: 6.0.116(zod@4.3.6)

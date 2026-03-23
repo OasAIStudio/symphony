@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 // Mock the AI SDK modules before importing handler
 vi.mock("ai", () => ({
@@ -9,12 +9,20 @@ vi.mock("ai-sdk-provider-claude-code", () => ({
   claudeCode: vi.fn(),
 }));
 
+vi.mock("../src/slack-bot/stream-consumer.js", () => ({
+  StreamConsumer: vi.fn().mockImplementation(() => ({
+    append: vi.fn().mockResolvedValue(undefined),
+    finish: vi.fn().mockResolvedValue(undefined),
+  })),
+}));
+
 import { streamText } from "ai";
 import { claudeCode } from "ai-sdk-provider-claude-code";
 
 import type { BoltMessageArgs } from "../src/slack-bot/handler.js";
 import { createMessageHandler } from "../src/slack-bot/handler.js";
 import { createCcSessionStore } from "../src/slack-bot/session-store.js";
+import { StreamConsumer } from "../src/slack-bot/stream-consumer.js";
 import type { ChannelProjectMap, SessionMap } from "../src/slack-bot/types.js";
 
 /** Create a mock Bolt message args object. */
@@ -37,6 +45,11 @@ function createMockBoltArgs(
       add: vi.fn().mockResolvedValue(undefined),
       remove: vi.fn().mockResolvedValue(undefined),
     },
+    assistant: {
+      threads: {
+        setStatus: vi.fn().mockResolvedValue(undefined),
+      },
+    },
   };
 
   const message = {
@@ -44,13 +57,14 @@ function createMockBoltArgs(
     text,
     ts: "1234.5678",
     channel: channelId,
+    user: "U_TEST_USER",
   };
 
   const args = {
     message,
     say,
     client,
-    context: {},
+    context: { teamId: "T_TEST_TEAM" },
     logger: { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() },
     next: vi.fn(),
     event: message,
@@ -62,6 +76,16 @@ function createMockBoltArgs(
 }
 
 describe("Error handling", () => {
+  beforeEach(() => {
+    vi.mocked(StreamConsumer).mockImplementation(
+      () =>
+        ({
+          append: vi.fn().mockResolvedValue(undefined),
+          finish: vi.fn().mockResolvedValue(undefined),
+        }) as unknown as StreamConsumer,
+    );
+  });
+
   afterEach(() => {
     vi.restoreAllMocks();
   });
@@ -98,9 +122,11 @@ describe("Error handling", () => {
     const { args, say } = createMockBoltArgs("C123", "test query");
     await handler(args);
 
-    // Should post a user-friendly error message
+    // Should post a structured error message
     expect(say).toHaveBeenCalledWith(
-      expect.objectContaining({ text: "Error: Rate limit exceeded" }),
+      expect.objectContaining({
+        text: expect.stringContaining("Rate limit exceeded"),
+      }),
     );
   });
 
@@ -188,7 +214,7 @@ describe("Error handling", () => {
     // Should post generic error message for non-Error values
     expect(say).toHaveBeenCalledWith(
       expect.objectContaining({
-        text: "Error: An unexpected error occurred",
+        text: expect.stringContaining("An unexpected error occurred"),
       }),
     );
 

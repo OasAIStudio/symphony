@@ -19,6 +19,8 @@ export {
 } from "./session-store.js";
 export { parseSlashCommand } from "./slash-commands.js";
 export { createMessageHandler, splitAtParagraphs } from "./handler.js";
+export { markdownToMrkdwn } from "./format.js";
+export { StreamConsumer } from "./stream-consumer.js";
 export { chunkResponse, SLACK_MAX_CHARS } from "../chunking.js";
 export {
   markProcessing,
