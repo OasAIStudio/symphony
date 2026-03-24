@@ -1,0 +1,359 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# symphony-onboard — onboard a new project into the Symphony pipeline
+# Usage: symphony-onboard --repo <owner/repo> --project-slug <slug> --project-name <name> --port <number> [--dry-run]
+
+SCRIPT_DIR="$(cd "$(dirname "$(realpath "${BASH_SOURCE[0]}")")" && pwd)"
+SYMPHONY_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+
+TEMPLATE_DIR="$SYMPHONY_ROOT/pipeline-config/templates"
+WORKFLOW_DIR="$SYMPHONY_ROOT/pipeline-config/workflows"
+
+# Colors (disabled if not a terminal)
+if [[ -t 1 ]]; then
+  RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[0;33m'; CYAN='\033[0;36m'; NC='\033[0m'
+else
+  RED=''; GREEN=''; YELLOW=''; CYAN=''; NC=''
+fi
+
+info()  { echo -e "${CYAN}▸${NC} $*"; }
+ok()    { echo -e "${GREEN}✓${NC} $*"; }
+warn()  { echo -e "${YELLOW}⚠${NC} $*" >&2; }
+die()   { echo -e "${RED}✗${NC} $*" >&2; exit 1; }
+
+# --- Temp directory cleanup ---
+
+TMPDIR_ONBOARD=""
+cleanup() {
+  if [[ -n "$TMPDIR_ONBOARD" && -d "$TMPDIR_ONBOARD" ]]; then
+    rm -rf "$TMPDIR_ONBOARD"
+  fi
+}
+trap cleanup EXIT
+
+# --- Helpers ---
+
+usage() {
+  cat <<EOF
+symphony-onboard — onboard a new project into the Symphony pipeline
+
+Usage: symphony-onboard [flags]
+
+Required flags:
+  --repo <owner/repo>        GitHub repository (e.g., mobilyze-llc/my-project)
+  --project-slug <slug>      Linear project slugId (UUID)
+  --project-name <name>      Human-readable project name (e.g., "my-project")
+  --port <number>            Port number for WORKFLOW server config
+
+Optional flags:
+  --dry-run                  Show what each step would do without executing
+  -h, --help                 Show this help message
+
+Environment:
+  LINEAR_API_KEY             Linear API token (required for project verification)
+
+Steps performed:
+  1. Verify Linear project access
+  2. Generate WORKFLOW file from template
+  3. Generate CLAUDE.md in target repo
+  4. Copy CI minimal workflow to target repo
+  5. Set up GitHub merge queue via Rulesets API
+
+EOF
+}
+
+run_or_dry() {
+  if $DRY_RUN; then
+    info "[dry-run] $*"
+  else
+    "$@"
+  fi
+}
+
+# --- Precondition checks ---
+
+check_gh_auth() {
+  gh auth status >/dev/null 2>&1 || die "GitHub CLI not authenticated. Run 'gh auth login' first."
+}
+
+check_linear_key() {
+  [[ -n "${LINEAR_API_KEY:-}" ]] || die "LINEAR_API_KEY environment variable is not set."
+}
+
+check_repo_exists() {
+  local repo="$1"
+  gh api "/repos/$repo" --silent >/dev/null 2>&1 || die "Repository '$repo' not found or not accessible."
+}
+
+check_templates() {
+  [[ -f "$TEMPLATE_DIR/WORKFLOW-template.md" ]] || die "WORKFLOW template not found at $TEMPLATE_DIR/WORKFLOW-template.md"
+  [[ -f "$TEMPLATE_DIR/CLAUDE.md.tmpl" ]] || die "CLAUDE.md template not found at $TEMPLATE_DIR/CLAUDE.md.tmpl"
+  [[ -f "$TEMPLATE_DIR/ci-minimal.yml" ]] || die "CI minimal template not found at $TEMPLATE_DIR/ci-minimal.yml"
+}
+
+# --- Flags ---
+
+DRY_RUN=false
+REPO=""
+PROJECT_SLUG=""
+PROJECT_NAME=""
+PORT=""
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --dry-run)          DRY_RUN=true ;;
+    --repo)             REPO="${2:-}"; [[ -n "$REPO" ]] || die "--repo requires a value"; shift ;;
+    --project-slug)     PROJECT_SLUG="${2:-}"; [[ -n "$PROJECT_SLUG" ]] || die "--project-slug requires a value"; shift ;;
+    --project-name)     PROJECT_NAME="${2:-}"; [[ -n "$PROJECT_NAME" ]] || die "--project-name requires a value"; shift ;;
+    --port)             PORT="${2:-}"; [[ -n "$PORT" ]] || die "--port requires a value"; shift ;;
+    -h|--help)          usage; exit 0 ;;
+    *)                  die "Unknown flag: $1" ;;
+  esac
+  shift
+done
+
+# Validate required flags
+[[ -n "$REPO" ]]          || die "Missing required flag: --repo"
+[[ -n "$PROJECT_SLUG" ]]  || die "Missing required flag: --project-slug"
+[[ -n "$PROJECT_NAME" ]]  || die "Missing required flag: --project-name"
+[[ -n "$PORT" ]]          || die "Missing required flag: --port"
+
+# Validate port is a number
+[[ "$PORT" =~ ^[0-9]+$ ]] || die "--port must be a numeric value, got: $PORT"
+
+# --- Main ---
+
+if $DRY_RUN; then
+  info "symphony-onboard [DRY RUN]"
+else
+  info "symphony-onboard"
+fi
+info "  repo:         $REPO"
+info "  project-slug: $PROJECT_SLUG"
+info "  project-name: $PROJECT_NAME"
+info "  port:         $PORT"
+echo ""
+
+# Create temp directory for intermediate files
+TMPDIR_ONBOARD="$(mktemp -d)"
+
+# --- Preconditions ---
+
+info "=== Precondition checks ==="
+check_gh_auth
+ok "GitHub CLI authenticated"
+
+check_linear_key
+ok "LINEAR_API_KEY is set"
+
+check_templates
+ok "All templates found"
+
+if ! $DRY_RUN; then
+  check_repo_exists "$REPO"
+  ok "Repository '$REPO' is accessible"
+else
+  info "[dry-run] Would verify repository '$REPO' exists"
+fi
+
+echo ""
+
+# --- Step 1: Verify Linear project access ---
+
+info "=== Step 1: Verify Linear project access ==="
+
+if $DRY_RUN; then
+  info "[dry-run] Would verify Linear project slug '$PROJECT_SLUG'"
+else
+  LINEAR_GQL='query($slug: String!) { projects(filter: { slugId: { eq: $slug } }) { nodes { id name slugId } } }'
+  LINEAR_RESULT="$(echo "$LINEAR_GQL" | LINEAR_API_KEY="$LINEAR_API_KEY" linear api --variables-json "{\"slug\":\"$PROJECT_SLUG\"}" 2>/dev/null || true)"
+
+  if [[ -z "$LINEAR_RESULT" ]]; then
+    die "Failed to query Linear API. Check LINEAR_API_KEY and network connectivity."
+  fi
+
+  PROJECT_COUNT="$(echo "$LINEAR_RESULT" | jq -r '.data.projects.nodes | length' 2>/dev/null || echo "0")"
+  if [[ "$PROJECT_COUNT" -eq 0 ]]; then
+    die "Linear project with slugId '$PROJECT_SLUG' not found. Verify the slug via: linear_graphql query { projects { nodes { id name slugId } } }"
+  fi
+
+  LINEAR_PROJECT_NAME="$(echo "$LINEAR_RESULT" | jq -r '.data.projects.nodes[0].name' 2>/dev/null || echo "(unknown)")"
+  ok "Linear project found: $LINEAR_PROJECT_NAME (slug: $PROJECT_SLUG)"
+fi
+
+echo ""
+
+# --- Step 2: Generate WORKFLOW file ---
+
+info "=== Step 2: Generate WORKFLOW file ==="
+
+# Derive workflow name from project-name (kebab-case)
+WORKFLOW_NAME="$(echo "$PROJECT_NAME" | tr '[:upper:]' '[:lower:]' | tr ' ' '-')"
+WORKFLOW_FILE="$WORKFLOW_DIR/WORKFLOW-${WORKFLOW_NAME}.md"
+
+if [[ -f "$WORKFLOW_FILE" ]]; then
+  ok "WORKFLOW file already exists at $WORKFLOW_FILE — skipping"
+else
+  info "Generating $WORKFLOW_FILE..."
+  if $DRY_RUN; then
+    info "[dry-run] Would copy WORKFLOW-template.md → WORKFLOW-${WORKFLOW_NAME}.md"
+    info "[dry-run] Would substitute project_slug: $PROJECT_SLUG"
+    info "[dry-run] Would substitute port: $PORT"
+  else
+    cp "$TEMPLATE_DIR/WORKFLOW-template.md" "$WORKFLOW_FILE"
+    # Substitute project_slug (only the placeholder value, not the key)
+    sed -i'' -e "s|project_slug: <YOUR_PROJECT_SLUG_HERE>|project_slug: $PROJECT_SLUG|" "$WORKFLOW_FILE"
+    # Substitute port (only the default value under server:)
+    sed -i'' -e "s|port: 4321|port: $PORT|" "$WORKFLOW_FILE"
+    ok "WORKFLOW file created at $WORKFLOW_FILE"
+  fi
+fi
+
+echo ""
+
+# --- Step 3: Generate CLAUDE.md in target repo ---
+
+info "=== Step 3: Generate CLAUDE.md in target repo ==="
+
+if $DRY_RUN; then
+  info "[dry-run] Would check if CLAUDE.md exists in $REPO"
+  info "[dry-run] Would generate CLAUDE.md from template with substitutions:"
+  info "[dry-run]   {{PROJECT_NAME}} → $PROJECT_NAME"
+  info "[dry-run]   {{PORT}} → $PORT"
+  info "[dry-run]   {{REPO_URL}} → https://github.com/$REPO"
+  info "[dry-run] Would upload CLAUDE.md to $REPO via GitHub API"
+else
+  # Check if CLAUDE.md already exists in the repo
+  EXISTING_CLAUDE="$(gh api "/repos/$REPO/contents/CLAUDE.md" --jq '.sha' 2>/dev/null || echo "")"
+
+  if [[ -n "$EXISTING_CLAUDE" ]]; then
+    ok "CLAUDE.md already exists in $REPO — skipping"
+  else
+    # Generate CLAUDE.md from template
+    CLAUDE_MD_TMP="$TMPDIR_ONBOARD/CLAUDE.md"
+    sed \
+      -e "s|{{PROJECT_NAME}}|$PROJECT_NAME|g" \
+      -e "s|{{PORT}}|$PORT|g" \
+      -e "s|{{REPO_URL}}|https://github.com/$REPO|g" \
+      "$TEMPLATE_DIR/CLAUDE.md.tmpl" > "$CLAUDE_MD_TMP"
+
+    # Upload via GitHub API (create file)
+    CONTENT_B64="$(base64 < "$CLAUDE_MD_TMP")"
+    gh api "/repos/$REPO/contents/CLAUDE.md" \
+      --method PUT \
+      --field message="Add CLAUDE.md for Symphony pipeline" \
+      --field content="$CONTENT_B64" \
+      --silent >/dev/null 2>&1
+    ok "CLAUDE.md uploaded to $REPO"
+  fi
+fi
+
+echo ""
+
+# --- Step 4: Copy CI minimal workflow to target repo ---
+
+info "=== Step 4: Copy CI minimal workflow to target repo ==="
+
+if $DRY_RUN; then
+  info "[dry-run] Would check if .github/workflows/ci.yml exists in $REPO"
+  info "[dry-run] Would upload ci-minimal.yml as .github/workflows/ci.yml to $REPO"
+else
+  EXISTING_CI="$(gh api "/repos/$REPO/contents/.github/workflows/ci.yml" --jq '.sha' 2>/dev/null || echo "")"
+
+  if [[ -n "$EXISTING_CI" ]]; then
+    ok "CI workflow already exists in $REPO — skipping"
+  else
+    CI_CONTENT_B64="$(base64 < "$TEMPLATE_DIR/ci-minimal.yml")"
+    gh api "/repos/$REPO/contents/.github/workflows/ci.yml" \
+      --method PUT \
+      --field message="Add minimal CI workflow for Symphony pipeline" \
+      --field content="$CI_CONTENT_B64" \
+      --silent >/dev/null 2>&1
+    ok "CI workflow uploaded to $REPO"
+  fi
+fi
+
+echo ""
+
+# --- Step 5: Set up GitHub merge queue via Rulesets API ---
+
+info "=== Step 5: Set up GitHub merge queue via Rulesets API ==="
+
+if $DRY_RUN; then
+  info "[dry-run] Would check existing rulesets for $REPO"
+  info "[dry-run] Would create merge queue ruleset if not present"
+else
+  # Check if a merge queue ruleset already exists
+  EXISTING_RULESETS="$(gh api "/repos/$REPO/rulesets" 2>/dev/null || echo "[]")"
+  HAS_MERGE_QUEUE="$(echo "$EXISTING_RULESETS" | jq '[.[] | select(.name == "symphony-merge-queue")] | length' 2>/dev/null || echo "0")"
+
+  if [[ "$HAS_MERGE_QUEUE" -gt 0 ]]; then
+    ok "Merge queue ruleset already exists in $REPO — skipping"
+  else
+    # Create ruleset JSON in temp file
+    RULESET_JSON="$TMPDIR_ONBOARD/ruleset.json"
+    cat > "$RULESET_JSON" <<'RULESET_EOF'
+{
+  "name": "symphony-merge-queue",
+  "target": "branch",
+  "enforcement": "active",
+  "conditions": {
+    "ref_name": {
+      "include": ["refs/heads/main"],
+      "exclude": []
+    }
+  },
+  "rules": [
+    {
+      "type": "merge_queue",
+      "parameters": {
+        "check_response_timeout_minutes": 60,
+        "grouping_strategy": "ALLGREEN",
+        "max_entries_to_build": 5,
+        "max_entries_to_merge": 5,
+        "merge_method": "SQUASH",
+        "min_entries_to_merge": 1,
+        "min_entries_to_merge_wait_minutes": 5
+      }
+    },
+    {
+      "type": "required_status_checks",
+      "parameters": {
+        "required_status_checks": [
+          {
+            "context": "test"
+          }
+        ],
+        "strict_required_status_checks_policy": false
+      }
+    }
+  ],
+  "bypass_actors": []
+}
+RULESET_EOF
+
+    gh api "/repos/$REPO/rulesets" \
+      --method POST \
+      --input "$RULESET_JSON" \
+      --silent >/dev/null 2>&1
+    ok "Merge queue ruleset created in $REPO"
+  fi
+fi
+
+echo ""
+
+# --- Summary ---
+
+info "=== Summary ==="
+info "  WORKFLOW:     $WORKFLOW_FILE"
+info "  CLAUDE.md:    $REPO/CLAUDE.md"
+info "  CI workflow:  $REPO/.github/workflows/ci.yml"
+info "  Merge queue:  $REPO (symphony-merge-queue ruleset)"
+
+if $DRY_RUN; then
+  echo ""
+  info "Dry run complete — no changes were made."
+fi
+
+ok "Onboarding complete for $PROJECT_NAME"
