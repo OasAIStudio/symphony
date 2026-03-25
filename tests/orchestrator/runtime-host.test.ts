@@ -13,6 +13,7 @@ import {
 import type { PipelineNotificationEvent } from "../../src/orchestrator/pipeline-notifier.js";
 import {
   OrchestratorRuntimeHost,
+  createWorkspaceHookLogger,
   extractProductName,
   startRuntimeService,
 } from "../../src/orchestrator/runtime-host.js";
@@ -1804,6 +1805,99 @@ describe("extractProductName", () => {
 
   it("handles paths without directory separators", () => {
     expect(extractProductName("WORKFLOW-jony.md")).toBe("jony");
+  });
+});
+
+describe("createWorkspaceHookLogger", () => {
+  it("includes stdout and stderr in structured log entries when non-empty", async () => {
+    const entries: StructuredLogEntry[] = [];
+    const logger = new StructuredLogger([
+      {
+        write: (entry) => {
+          entries.push(entry);
+        },
+      },
+    ]);
+    const hookLog = createWorkspaceHookLogger(logger);
+
+    hookLog({
+      level: "error",
+      event: "workspace_hook_failed",
+      hook: "afterCreate",
+      workspacePath: "/tmp/workspace",
+      durationMs: 1234,
+      exitCode: 1,
+      errorCode: "HOOK_FAILED",
+      stdout: "some output",
+      stderr: "fatal: repository not found",
+    });
+
+    // Allow async logger to flush
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(entries).toHaveLength(1);
+    expect(entries[0]).toMatchObject({
+      event: "workspace_hook_failed",
+      stdout: "some output",
+      stderr: "fatal: repository not found",
+      exit_code: 1,
+      error_code: "HOOK_FAILED",
+      duration_ms: 1234,
+    });
+  });
+
+  it("omits stdout and stderr from structured log entries when empty", async () => {
+    const entries: StructuredLogEntry[] = [];
+    const logger = new StructuredLogger([
+      {
+        write: (entry) => {
+          entries.push(entry);
+        },
+      },
+    ]);
+    const hookLog = createWorkspaceHookLogger(logger);
+
+    hookLog({
+      level: "info",
+      event: "workspace_hook_completed",
+      hook: "beforeRun",
+      workspacePath: "/tmp/workspace",
+      durationMs: 500,
+      exitCode: 0,
+      stdout: "",
+      stderr: "",
+    });
+
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(entries).toHaveLength(1);
+    expect(entries[0]).not.toHaveProperty("stdout");
+    expect(entries[0]).not.toHaveProperty("stderr");
+  });
+
+  it("omits stdout and stderr when they are undefined", async () => {
+    const entries: StructuredLogEntry[] = [];
+    const logger = new StructuredLogger([
+      {
+        write: (entry) => {
+          entries.push(entry);
+        },
+      },
+    ]);
+    const hookLog = createWorkspaceHookLogger(logger);
+
+    hookLog({
+      level: "info",
+      event: "workspace_hook_started",
+      hook: "afterCreate",
+      workspacePath: "/tmp/workspace",
+    });
+
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(entries).toHaveLength(1);
+    expect(entries[0]).not.toHaveProperty("stdout");
+    expect(entries[0]).not.toHaveProperty("stderr");
   });
 });
 

@@ -1217,7 +1217,7 @@ function createQueuedTimerScheduler(input: {
   };
 }
 
-function createWorkspaceHookLogger(logger: StructuredLogger): (entry: {
+export function createWorkspaceHookLogger(logger: StructuredLogger): (entry: {
   level: "info" | "warn" | "error";
   event:
     | "workspace_hook_started"
@@ -1252,6 +1252,8 @@ function createWorkspaceHookLogger(logger: StructuredLogger): (entry: {
         ...(entry.errorCode === undefined
           ? {}
           : { error_code: entry.errorCode }),
+        ...(entry.stdout ? { stdout: entry.stdout } : {}),
+        ...(entry.stderr ? { stderr: entry.stderr } : {}),
       },
     );
   };
