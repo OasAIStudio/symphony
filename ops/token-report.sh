@@ -68,6 +68,35 @@ acquire_lock() {
 
 SUBCOMMAND="${1:-extract}"
 NODE_BIN="${SYMPHONY_NODE:-$(which node 2>/dev/null || echo /opt/homebrew/bin/node)}"
+UI_DIR="$SCRIPT_DIR/token-report-ui"
+
+# ---------------------------------------------------------------------------
+# Build helper: copy analysis.json → React app src/data, pnpm build,
+# copy dist/index.html → reports/{date}.html
+# ---------------------------------------------------------------------------
+
+build_report() {
+  local analysis_json="$SYMPHONY_HOME/data/analysis.json"
+  if [ ! -f "$analysis_json" ]; then
+    echo "ERROR: $analysis_json not found — run analyze first" >&2
+    return 1
+  fi
+
+  # Copy live analysis data into React app source for static bundling
+  mkdir -p "$UI_DIR/src/data"
+  cp "$analysis_json" "$UI_DIR/src/data/analysis.json"
+
+  # Build the React app (produces dist/index.html as single-file bundle)
+  (cd "$UI_DIR" && pnpm build)
+  echo "INFO: React app build complete" >&2
+
+  # Copy built HTML to reports directory
+  local today
+  today="$(date +%Y-%m-%d)"
+  mkdir -p "$SYMPHONY_HOME/reports"
+  cp "$UI_DIR/dist/index.html" "$SYMPHONY_HOME/reports/${today}.html"
+  echo "INFO: Report written to $SYMPHONY_HOME/reports/${today}.html" >&2
+}
 
 case "$SUBCOMMAND" in
   extract)
@@ -80,7 +109,8 @@ case "$SUBCOMMAND" in
     ;;
   render)
     acquire_lock
-    "$NODE_BIN" "$SCRIPT_DIR/token-report.mjs" render
+    # Build React app report from analysis.json (SYMPH-145)
+    build_report
     ;;
   slack)
     "$NODE_BIN" "$SCRIPT_DIR/token-report.mjs" slack
@@ -91,8 +121,8 @@ case "$SUBCOMMAND" in
   daily)
     acquire_lock
 
-    # Daily pipeline: extract → analyze → render → slack → rotate
-    # If extract/analyze/render fail → skip subsequent, exit non-zero
+    # Daily pipeline: extract → analyze → build → slack → rotate
+    # If extract/analyze/build fail → skip subsequent, exit non-zero
     # Slack failure → log warning, continue to rotate (graceful degradation)
     # Rotate failure → log warning, exit non-zero
 
@@ -104,8 +134,8 @@ case "$SUBCOMMAND" in
     "$NODE_BIN" "$SCRIPT_DIR/token-report.mjs" analyze > /dev/null
     echo "INFO: analyze complete" >&2
 
-    "$NODE_BIN" "$SCRIPT_DIR/token-report.mjs" render
-    echo "INFO: render complete" >&2
+    build_report
+    echo "INFO: build complete" >&2
 
     # Slack: graceful degradation — failure logs warning but continues
     if ! "$NODE_BIN" "$SCRIPT_DIR/token-report.mjs" slack; then

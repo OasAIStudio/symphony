@@ -1198,11 +1198,15 @@ function computeAnalysis() {
 }
 
 /**
- * Main analyze function — prints analysis JSON to stdout.
+ * Main analyze function — writes analysis.json to DATA_DIR and prints to stdout.
  */
 function runAnalyze() {
   const result = computeAnalysis();
-  process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
+  const json = JSON.stringify(result, null, 2);
+  mkdirSync(DATA_DIR, { recursive: true });
+  writeFileSync(join(DATA_DIR, "analysis.json"), `${json}\n`);
+  info(`Analysis written to ${join(DATA_DIR, "analysis.json")}`);
+  process.stdout.write(`${json}\n`);
 }
 
 // ---------------------------------------------------------------------------
@@ -1365,6 +1369,7 @@ function wowBadge(delta) {
 }
 
 /**
+ * @deprecated Use the React app build pipeline instead (SYMPH-145).
  * Render self-contained HTML report from analysis JSON.
  */
 function renderHtml(analysis) {

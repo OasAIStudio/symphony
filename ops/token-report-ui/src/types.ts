@@ -42,9 +42,16 @@ export interface StageSpend {
   failed: number;
 }
 
+export interface ConfigChange {
+  date: string;
+  timestamp?: string;
+  changed_files?: string[];
+}
+
 export interface StageTrend {
   daily_avg: number | Record<string, number>;
-  wow_delta: number;
+  wow_delta?: number;
+  config_changes?: ConfigChange[];
 }
 
 export interface PerTicketTrend {
