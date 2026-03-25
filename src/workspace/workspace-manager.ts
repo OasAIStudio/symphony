@@ -115,27 +115,41 @@ export class WorkspaceManager {
       };
 
       if (createdNow) {
-        const mutex = getCreationMutex(workspaceRoot);
-        const queueDepth = mutex.depth;
-
-        if (queueDepth > 0) {
-          console.log(
-            `[workspace] afterCreate for ${workspacePath} is queued (depth: ${queueDepth})`,
-          );
-        } else {
-          console.log(
-            `[workspace] afterCreate for ${workspacePath} is executing`,
-          );
-        }
-
-        const release = await mutex.acquire();
         try {
-          await this.#hooks?.run({
-            name: "afterCreate",
-            workspacePath,
-          });
-        } finally {
-          release();
+          const mutex = getCreationMutex(workspaceRoot);
+          const queueDepth = mutex.depth;
+
+          if (queueDepth > 0) {
+            console.log(
+              `[workspace] afterCreate for ${workspacePath} is queued (depth: ${queueDepth})`,
+            );
+          } else {
+            console.log(
+              `[workspace] afterCreate for ${workspacePath} is executing`,
+            );
+          }
+
+          const release = await mutex.acquire();
+          try {
+            await this.#hooks?.run({
+              name: "afterCreate",
+              workspacePath,
+            });
+          } finally {
+            release();
+          }
+        } catch (hookError) {
+          // Clean up the empty directory so the next retry re-creates it
+          // and re-runs the afterCreate hook instead of skipping it.
+          try {
+            await this.#fs.rm(workspacePath, {
+              force: true,
+              recursive: true,
+            });
+          } catch {
+            // Best-effort cleanup — the hook failure is the primary error.
+          }
+          throw hookError;
         }
       }
 

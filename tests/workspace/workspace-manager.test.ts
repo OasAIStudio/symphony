@@ -214,6 +214,103 @@ describe("WorkspaceManager", () => {
     // Remove ran while the hook was still executing (i.e. was not blocked).
     expect(removeCalledWhileHookRunning).toBe(true);
   });
+
+  it("removes workspace directory when afterCreate hook fails", async () => {
+    const root = await createRoot();
+    const hooks = new WorkspaceHookRunner({
+      config: {
+        afterCreate: "prepare",
+        beforeRun: null,
+        afterRun: null,
+        beforeRemove: null,
+        timeoutMs: 100,
+      },
+      execute: async () => {
+        throw new Error("hook failed: git clone race condition");
+      },
+    });
+    const manager = new WorkspaceManager({ root, hooks });
+
+    await expect(manager.createForIssue("issue-123")).rejects.toThrowError(
+      expect.objectContaining<Partial<WorkspacePathError>>({
+        code: ERROR_CODES.workspaceCreateFailed,
+      }),
+    );
+
+    // The workspace directory should have been cleaned up.
+    const { promises: fsPromises } = await import("node:fs");
+    await expect(
+      fsPromises.lstat(join(root, "issue-123")),
+    ).rejects.toThrowError(/ENOENT/);
+  });
+
+  it("re-runs afterCreate hook on retry after a previous hook failure", async () => {
+    const root = await createRoot();
+    let hookCallCount = 0;
+    const hooks = new WorkspaceHookRunner({
+      config: {
+        afterCreate: "prepare",
+        beforeRun: null,
+        afterRun: null,
+        beforeRemove: null,
+        timeoutMs: 100,
+      },
+      execute: async () => {
+        hookCallCount++;
+        if (hookCallCount === 1) {
+          throw new Error("hook failed on first attempt");
+        }
+        return { exitCode: 0, signal: null, stdout: "", stderr: "" };
+      },
+    });
+    const manager = new WorkspaceManager({ root, hooks });
+
+    // First attempt fails (error wrapped in WorkspacePathError).
+    await expect(manager.createForIssue("issue-123")).rejects.toThrowError(
+      expect.objectContaining<Partial<WorkspacePathError>>({
+        code: ERROR_CODES.workspaceCreateFailed,
+      }),
+    );
+
+    // Second attempt should re-create and re-run the hook.
+    const workspace = await manager.createForIssue("issue-123");
+
+    expect(workspace.createdNow).toBe(true);
+    expect(hookCallCount).toBe(2);
+  });
+
+  it("propagates the original hook error as cause after cleanup", async () => {
+    const root = await createRoot();
+    const hookError = new Error("specific hook failure");
+    const hooks = new WorkspaceHookRunner({
+      config: {
+        afterCreate: "prepare",
+        beforeRun: null,
+        afterRun: null,
+        beforeRemove: null,
+        timeoutMs: 100,
+      },
+      execute: async () => {
+        throw hookError;
+      },
+    });
+    const manager = new WorkspaceManager({ root, hooks });
+
+    try {
+      await manager.createForIssue("issue-123");
+      expect.unreachable("should have thrown");
+    } catch (error) {
+      // The thrown error is a WorkspacePathError wrapping a WorkspaceHookError.
+      expect((error as WorkspacePathError).code).toBe(
+        ERROR_CODES.workspaceCreateFailed,
+      );
+      // The cause chain preserves the hook error: WorkspacePathError
+      // -> WorkspaceHookError (from the hook runner) -> original Error.
+      const hookWrapperError = (error as Error).cause as Error;
+      expect(hookWrapperError.name).toBe("WorkspaceHookError");
+      expect(hookWrapperError.cause).toBe(hookError);
+    }
+  });
 });
 
 describe("AsyncMutex", () => {
