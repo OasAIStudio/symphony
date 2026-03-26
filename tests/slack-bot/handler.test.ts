@@ -170,10 +170,11 @@ describe("createMessageHandler", () => {
     );
     await handler(args);
 
-    // Verify claudeCode was called with correct cwd and permissionMode
+    // Verify claudeCode was called with correct cwd, permissionMode, and settingSources
     expect(claudeCode).toHaveBeenCalledWith("sonnet", {
       cwd: "/tmp/test-project",
       permissionMode: "bypassPermissions",
+      settingSources: ["user", "project"],
     });
 
     // Verify streamText was called with the claudeCode model and prompt
@@ -563,6 +564,7 @@ describe("createMessageHandler", () => {
     expect(claudeCode).toHaveBeenCalledWith("sonnet", {
       cwd: "/tmp/test-project",
       permissionMode: "bypassPermissions",
+      settingSources: ["user", "project"],
     });
 
     // Second message: reply in same thread
@@ -581,6 +583,7 @@ describe("createMessageHandler", () => {
     expect(claudeCode).toHaveBeenCalledWith("sonnet", {
       cwd: "/tmp/test-project",
       permissionMode: "bypassPermissions",
+      settingSources: ["user", "project"],
       resume: "cc-session-abc",
     });
   });
@@ -614,6 +617,7 @@ describe("createMessageHandler", () => {
     expect(claudeCode).toHaveBeenCalledWith("sonnet", {
       cwd: "/tmp/test-project",
       permissionMode: "bypassPermissions",
+      settingSources: ["user", "project"],
     });
   });
 

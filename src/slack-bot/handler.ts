@@ -158,10 +158,12 @@ export function createMessageHandler(options: HandleMessageOptions) {
       const ccOptions: {
         cwd: string;
         permissionMode: "bypassPermissions";
+        settingSources: Array<"user" | "project">;
         resume?: string;
       } = {
         cwd: projectDir,
         permissionMode: "bypassPermissions",
+        settingSources: ["user", "project"],
       };
       if (existingSessionId) {
         ccOptions.resume = existingSessionId;

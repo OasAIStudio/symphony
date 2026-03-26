@@ -224,6 +224,7 @@ describe("Session continuity in handler", () => {
     expect(claudeCode).toHaveBeenCalledWith(expect.any(String), {
       cwd: "/tmp/test-project",
       permissionMode: "bypassPermissions",
+      settingSources: ["user", "project"],
     });
   });
 
