@@ -60,7 +60,12 @@ const isDirectExecution =
 
 if (isDirectExecution) {
   try {
+    const verbose = process.argv.includes("--verbose");
     const config = loadSlackBotConfig();
+    config.verbose = verbose;
+    if (verbose) {
+      console.log("Verbose logging enabled");
+    }
     void startSlackBot(config);
   } catch (error) {
     console.error(

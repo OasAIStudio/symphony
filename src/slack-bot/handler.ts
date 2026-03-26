@@ -35,6 +35,8 @@ export interface HandleMessageOptions {
   ccSessions: CcSessionStore;
   /** Claude Code model identifier (default: "sonnet") */
   model?: string;
+  /** Enable verbose diagnostic logging (session IDs, stream timing). */
+  verbose?: boolean;
 }
 
 /** Bolt message handler arguments. */
@@ -84,7 +86,18 @@ async function setThinkingStatus(
  * Creates a message handler function for use with `app.message()`.
  */
 export function createMessageHandler(options: HandleMessageOptions) {
-  const { channelMap, sessions, ccSessions, model = "sonnet" } = options;
+  const {
+    channelMap,
+    sessions,
+    ccSessions,
+    model = "sonnet",
+    verbose = false,
+  } = options;
+
+  /** Write to stderr only when --verbose is active. */
+  const logVerbose = verbose
+    ? (msg: string) => process.stderr.write(msg)
+    : () => {};
 
   return async (args: BoltMessageArgs): Promise<void> => {
     const { message, say, client, context } = args;
@@ -171,12 +184,12 @@ export function createMessageHandler(options: HandleMessageOptions) {
       };
       if (existingSessionId) {
         ccOptions.resume = existingSessionId;
-        process.stderr.write(
+        logVerbose(
           `[session-diag] RESUME thread=${threadTs} sessionId=${existingSessionId}\n`,
         );
       } else {
         ccOptions.settingSources = ["user", "project"];
-        process.stderr.write(
+        logVerbose(
           `[session-diag] NEW thread=${threadTs} (no existing session)\n`,
         );
       }
@@ -212,7 +225,7 @@ export function createMessageHandler(options: HandleMessageOptions) {
           chunkCount++;
           totalChars += chunk.length;
           if (gap > 3000) {
-            process.stderr.write(
+            logVerbose(
               `[stream-diag] ${gap}ms gap before chunk #${chunkCount} (${chunk.length} chars, total ${totalChars})\n`,
             );
           }
@@ -220,13 +233,13 @@ export function createMessageHandler(options: HandleMessageOptions) {
           await consumer.append(chunk);
           const appendMs = Date.now() - t0;
           if (appendMs > 1000) {
-            process.stderr.write(
+            logVerbose(
               `[stream-diag] append took ${appendMs}ms for chunk #${chunkCount} (${chunk.length} chars)\n`,
             );
           }
           lastChunkTime = Date.now();
         }
-        process.stderr.write(
+        logVerbose(
           `[stream-diag] stream complete: ${chunkCount} chunks, ${totalChars} chars\n`,
         );
         await consumer.finish();
@@ -244,11 +257,11 @@ export function createMessageHandler(options: HandleMessageOptions) {
       const ccSessionId = metadata?.["claude-code"]?.sessionId;
       if (ccSessionId) {
         setCcSessionId(ccSessions, threadTs, ccSessionId);
-        process.stderr.write(
+        logVerbose(
           `[session-diag] STORED thread=${threadTs} sessionId=${ccSessionId}\n`,
         );
       } else {
-        process.stderr.write(
+        logVerbose(
           `[session-diag] NO SESSION ID in providerMetadata (keys: ${metadata ? Object.keys(metadata).join(",") : "null"})\n`,
         );
       }

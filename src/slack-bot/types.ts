@@ -21,6 +21,8 @@ export interface SlackBotConfig {
    * Defaults to "sonnet".
    */
   model?: string;
+  /** Enable verbose diagnostic logging (session IDs, stream timing). */
+  verbose?: boolean;
 }
 
 /** Per-thread session state stored in memory. */

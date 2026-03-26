@@ -65,7 +65,7 @@ const ccSessions = createCcSessionStore();
  * Returns the App instance and associated session stores.
  */
 export function createSlackBoltApp(config: SlackBotConfig) {
-  const { botToken, appToken, channelMap, model } = config;
+  const { botToken, appToken, channelMap, model, verbose } = config;
 
   const app = new App({
     token: botToken,
@@ -78,6 +78,7 @@ export function createSlackBoltApp(config: SlackBotConfig) {
     sessions,
     ccSessions,
     ...(model !== undefined ? { model } : {}),
+    ...(verbose !== undefined ? { verbose } : {}),
   });
 
   // Match ALL messages — no @mention required per spec
