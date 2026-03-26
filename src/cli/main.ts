@@ -165,13 +165,31 @@ export async function startCliHost(
 ): Promise<RuntimeServiceHandle> {
   const slackChannel = input.runtime.config.server.slackNotifyChannel;
   const slackToken = input.env.SLACK_BOT_TOKEN;
-  const notifier =
-    slackChannel !== null && slackToken !== undefined
-      ? new PipelineNotifier({
-          channel: slackChannel,
-          poster: createSlackPoster({ botToken: slackToken }),
-        })
-      : null;
+  const canNotify = slackChannel !== null && slackToken !== undefined;
+
+  const notifier = canNotify
+    ? new PipelineNotifier({
+        channel: slackChannel,
+        poster: createSlackPoster({ botToken: slackToken }),
+        onError: (error) =>
+          logToStderr({
+            timestamp: formatEasternTimestamp(new Date()),
+            level: "error",
+            event: "slack_notification_failed",
+            channel: slackChannel,
+            message: safeErrorMessage(error),
+          }),
+      })
+    : null;
+
+  logToStderr({
+    timestamp: formatEasternTimestamp(new Date()),
+    level: "info",
+    event: "notifier_init",
+    enabled: canNotify,
+    channel: slackChannel,
+    tokenPresent: slackToken !== undefined,
+  });
 
   return startRuntimeService({
     config: input.runtime.config,
@@ -257,39 +275,38 @@ function safeErrorMessage(error: unknown): string {
   }
 }
 
+/** Best-effort structured JSON line to stderr. Never throws. */
+function logToStderr(entry: Record<string, unknown>): void {
+  try {
+    writeSync(2, `${JSON.stringify(entry)}\n`);
+  } catch {
+    // Swallow — logging must never crash the pipeline.
+  }
+}
+
 export function handleUncaughtException(error: unknown): void {
-  const entry = {
+  process.exitCode = 70;
+  logToStderr({
     timestamp: formatEasternTimestamp(new Date()),
     level: "error",
     event: "process_crash",
     message: safeErrorMessage(error),
     error_code: "uncaught_exception",
     stack: error instanceof Error ? error.stack : undefined,
-  };
-  process.exitCode = 70;
-  try {
-    writeSync(2, `${JSON.stringify(entry)}\n`);
-  } catch {
-    // Ignore write errors during crash — exiting is the priority.
-  }
+  });
   process.exit(70);
 }
 
 export function handleUnhandledRejection(reason: unknown): void {
-  const entry = {
+  process.exitCode = 70;
+  logToStderr({
     timestamp: formatEasternTimestamp(new Date()),
     level: "error",
     event: "process_crash",
     message: safeErrorMessage(reason),
     error_code: "unhandled_rejection",
     stack: reason instanceof Error ? reason.stack : undefined,
-  };
-  process.exitCode = 70;
-  try {
-    writeSync(2, `${JSON.stringify(entry)}\n`);
-  } catch {
-    // Ignore write errors during crash — exiting is the priority.
-  }
+  });
   process.exit(70);
 }
 
