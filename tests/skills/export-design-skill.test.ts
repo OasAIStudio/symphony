@@ -8,9 +8,7 @@ const skillContent = readFileSync(SKILL_PATH, "utf-8");
 describe("export-design SKILL.md", () => {
   describe("Step 3b: Inline DATA annotations", () => {
     it("contains Step 3b heading for DATA annotations", () => {
-      expect(skillContent).toContain(
-        "### Step 3b: Annotate Ambiguous Dynamic Values",
-      );
+      expect(skillContent).toContain("### 3b. Export JSX");
     });
 
     it("specifies the DATA comment syntax", () => {
@@ -19,55 +17,46 @@ describe("export-design SKILL.md", () => {
 
     it("covers conditional colors pattern", () => {
       expect(skillContent).toMatch(/conditional colors/i);
-      expect(skillContent).toContain("trendColor[m.trend]");
+      expect(skillContent).toContain("DATA: color indicates threshold/status");
     });
 
     it("covers computed text pattern (numbers with units)", () => {
       expect(skillContent).toMatch(/computed text/i);
-      expect(skillContent).toMatch(/(%, ×, K, M)/);
+      expect(skillContent).toContain("`%`, `×`, `▲`, `▼`");
     });
 
     it("covers SVG chart coordinates pattern", () => {
       expect(skillContent).toMatch(/SVG chart coordinates/i);
-      expect(skillContent).toContain("toPath(s.data)");
+      expect(skillContent).toContain(
+        "DATA: chart coordinates — replace with real data",
+      );
     });
 
-    it("covers template text mixing labels with values", () => {
-      expect(skillContent).toMatch(/template text mixing labels with values/i);
-      expect(skillContent).toContain("Last updated: {lastUpdated}");
+    it("covers template text pattern", () => {
+      expect(skillContent).toMatch(/template text/i);
+      expect(skillContent).toContain(
+        "DATA: template — decompose into static + dynamic parts",
+      );
     });
 
     it("explicitly excludes static style values from annotation", () => {
-      expect(skillContent).toContain("Do NOT annotate");
+      expect(skillContent).toContain("do NOT annotate");
       expect(skillContent).toMatch(
-        /colors in.*style.*objects that are constant/i,
+        /colors in style objects.*that are uniform across siblings/i,
       );
       expect(skillContent).toMatch(/spacing.*padding.*margin/i);
     });
 
-    it("specifies in-place annotation (no separate file)", () => {
+    it("specifies re-save after annotation insertion", () => {
       expect(skillContent).toContain(
-        "Apply annotations in-place within each `sections/<name>.jsx` file",
+        "After inserting all annotations, re-save the JSX file.",
       );
-      expect(skillContent).toContain(
-        "Do not create a separate file for annotations",
-      );
-    });
-
-    it("provides before/after annotation example", () => {
-      // Before example
-      expect(skillContent).toContain("{trendIcon[m.trend]} {m.delta}");
-      // After example with DATA comments
-      expect(skillContent).toContain("{/* DATA: color varies by trend status");
-      expect(skillContent).toContain("{/* DATA: delta percentage value");
     });
   });
 
-  describe("Step 5b: Per-section screenshots", () => {
-    it("contains Step 5b heading for per-section screenshots", () => {
-      expect(skillContent).toContain(
-        "### Step 5b: Capture Per-Section Screenshots",
-      );
+  describe("Per-section screenshots", () => {
+    it("contains per-section screenshots heading", () => {
+      expect(skillContent).toContain("### Per-section screenshots");
     });
 
     it("uses $BASE_URL for the HTTP endpoint (no hardcoded localhost)", () => {
@@ -81,24 +70,16 @@ describe("export-design SKILL.md", () => {
       }
     });
 
-    it("saves per-section screenshots to sections/<kebab-case-name>.png", () => {
-      expect(skillContent).toContain("sections/SECTION_NAME.png");
-    });
-
     it("re-uses existing MCP session from Step 5", () => {
-      expect(skillContent).toContain(
-        "Re-use the existing $SESSION_ID from Step 5",
-      );
+      expect(skillContent).toContain("same** `$SESSION_ID`");
     });
 
     it("specifies minimum file size threshold for section screenshots", () => {
-      expect(skillContent).toMatch(/each.*>.*5KB/i);
+      expect(skillContent).toMatch(/section screenshot.*>.*5KB/i);
     });
 
     it("keeps full-artboard screenshot alongside per-section screenshots", () => {
-      expect(skillContent).toContain(
-        "full-artboard screenshot (`screenshot.png`) is always kept",
-      );
+      expect(skillContent).toContain("full-artboard screenshot is verified");
     });
   });
 
@@ -107,26 +88,31 @@ describe("export-design SKILL.md", () => {
       expect(skillContent).toContain("<kebab-case-name>.png");
     });
 
-    it("includes section .jsx files with DATA annotations in the bundle tree", () => {
-      expect(skillContent).toContain("(with DATA annotations)");
+    it("includes section .jsx files in the bundle tree", () => {
+      expect(skillContent).toContain("<kebab-case-name>.jsx");
     });
 
     it("preserves structural contract v2 references", () => {
-      // The skill should not alter the structural contract format
+      expect(skillContent).toContain("STRUCTURAL CONTRACT v2");
       expect(skillContent).not.toContain("STRUCTURAL CONTRACT v3");
+    });
+
+    it("does not include data-map.md in the bundle", () => {
+      expect(skillContent).not.toContain("data-map.md");
+      expect(skillContent).not.toContain("data-map");
     });
   });
 
   describe("Quality checklist", () => {
-    it("includes DATA annotation check", () => {
+    it("includes per-section PNG verification", () => {
       expect(skillContent).toContain(
-        "Each `.jsx` file contains `{/* DATA: ... */}` annotations",
+        "Every section in `sections/` has both a `.jsx` and a matching `.png` file",
       );
     });
 
-    it("includes per-section screenshot check", () => {
+    it("includes inline annotation spot-check", () => {
       expect(skillContent).toContain(
-        "Every section has a corresponding `.png` file in `sections/`",
+        "Spot-check 3 sections: each JSX file with ambiguous data values has at least one `{/* DATA: ... */}` annotation",
       );
     });
 
@@ -142,6 +128,58 @@ describe("export-design SKILL.md", () => {
         "`structure.md` lists all sections with dimensions",
       );
       expect(skillContent).toContain("No node IDs appear in any output file");
+    });
+
+    it("does not reference data-map.md in checklist", () => {
+      const checklistSection = skillContent.split("Quality Checklist")[1];
+      expect(checklistSection).not.toContain("data-map");
+    });
+  });
+
+  describe("MUST-write instructions for artifact reliability", () => {
+    it("requires behavior.md to be written even when empty", () => {
+      expect(skillContent).toContain(
+        "**This file MUST be written even when all tables are empty.**",
+      );
+    });
+
+    it("requires charts.md to be written even when no charts detected", () => {
+      expect(skillContent).toContain(
+        "**This file MUST be written even when no charts are detected.**",
+      );
+    });
+
+    it("requires css-warnings.md to be written even when no issues found", () => {
+      expect(skillContent).toContain(
+        "**This file MUST be written even when no issues are found.**",
+      );
+    });
+  });
+
+  describe("Step 6: Component Mapping derives from DATA annotations", () => {
+    it("references DATA annotations instead of data-map.md", () => {
+      const step6Section = skillContent.split(
+        "## Step 6: Populate Component Mapping",
+      )[1];
+      expect(step6Section).toContain(
+        "section JSX files with inline DATA annotations",
+      );
+      expect(step6Section).toContain(
+        "Scan the section's JSX file for `{/* DATA: ... */}` annotations",
+      );
+      expect(step6Section).not.toContain("data-map.md");
+    });
+  });
+
+  describe("Implementation Contract references", () => {
+    it("derives prop bindings from DATA annotations, not data-map.md", () => {
+      expect(skillContent).toContain(
+        "Derive prop bindings from inline `{/* DATA: ... */}` annotations",
+      );
+    });
+
+    it("references DATA annotations in Component Mapping column header", () => {
+      expect(skillContent).toContain("Key Props (from DATA annotations)");
     });
   });
 
