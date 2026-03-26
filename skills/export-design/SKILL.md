@@ -71,6 +71,44 @@ For each top-level section identified in Step 2:
 
 Example: layer name `"Executive Summary"` → `sections/executive-summary.jsx`
 
+### Step 3b: Annotate Ambiguous Dynamic Values
+
+After saving each `.jsx` file, scan the JSX for values that look dynamic or data-driven and insert inline `{/* DATA: description */}` comments immediately before the ambiguous expression. This helps implementation agents distinguish between static design values and runtime data.
+
+**Patterns to annotate** (insert a `{/* DATA: ... */}` comment before each match):
+
+| Pattern | Example in JSX | Annotation |
+|---------|---------------|------------|
+| **Conditional colors** — same visual element uses different colors based on state (implies a threshold or status map) | `color: trendColor[m.trend]` | `{/* DATA: color varies by trend — up=#10B981, down=#EF4444, flat=#64748B */}` |
+| **Computed text** — numbers with units (%, ×, K, M), currency, or delta indicators (↑↓) | `{m.value}` where value is `"1,847"` or `"94.3%"` | `{/* DATA: dynamic metric value (numeric with optional unit) */}` |
+| **SVG chart coordinates** — computed `d`, `points`, `x`, `y` attributes derived from data arrays | `d={toPath(s.data)}` | `{/* DATA: SVG path computed from series data points */}` |
+| **Template text mixing labels with values** — string interpolation combining a static label with a dynamic value | `Last updated: {lastUpdated}` | `{/* DATA: timestamp value interpolated with label */}` |
+
+**Do NOT annotate** (these are static style values, not data):
+- Colors in `style={{ }}` objects that are constant (e.g., `color: "#0F172A"`, `background: "#FFFFFF"`)
+- Spacing, padding, margin, border-radius, font-size, font-weight
+- Layout properties (display, flexDirection, gap, grid-template)
+- Static label text that never changes (e.g., `"Agent"`, `"Status"`)
+
+**Example** — before annotation:
+```jsx
+<span style={{ color: trendColor[m.trend] }}>
+  {trendIcon[m.trend]} {m.delta}
+</span>
+```
+
+**After annotation:**
+```jsx
+{/* DATA: color varies by trend status — maps to threshold-based palette */}
+<span style={{ color: trendColor[m.trend] }}>
+  {/* DATA: trend arrow icon (↑/↓/—) derived from trend direction */}
+  {/* DATA: delta percentage value — dynamic metric change */}
+  {trendIcon[m.trend]} {m.delta}
+</span>
+```
+
+Apply annotations in-place within each `sections/<name>.jsx` file after the initial save. Do not create a separate file for annotations.
+
 ---
 
 ## Step 4: Extract Design Tokens
@@ -117,21 +155,21 @@ Paper MCP's `get_screenshot` tool returns image data inline in the conversation 
 
 ```bash
 # 1. Initialize MCP session
-curl -s -D /tmp/paper_headers.txt -X POST "http://localhost:29979/mcp" \
+curl -s -D /tmp/paper_headers.txt -X POST "${BASE_URL:-http://localhost:29979}/mcp" \
   -H "Content-Type: application/json" \
   -H "Accept: application/json, text/event-stream" \
   -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-03-26","capabilities":{},"clientInfo":{"name":"export-design","version":"1.0.0"}}}'
 SESSION_ID=$(grep -i "mcp-session-id" /tmp/paper_headers.txt | cut -d' ' -f2 | tr -d '\r')
 
 # 2. Send initialized notification
-curl -s -X POST "http://localhost:29979/mcp" \
+curl -s -X POST "${BASE_URL:-http://localhost:29979}/mcp" \
   -H "Content-Type: application/json" \
   -H "Accept: application/json, text/event-stream" \
   -H "Mcp-Session-Id: $SESSION_ID" \
   -d '{"jsonrpc":"2.0","method":"notifications/initialized"}'
 
 # 3. Call get_screenshot, capture SSE response
-curl -s -X POST "http://localhost:29979/mcp" \
+curl -s -X POST "${BASE_URL:-http://localhost:29979}/mcp" \
   -H "Content-Type: application/json" \
   -H "Accept: application/json, text/event-stream" \
   -H "Mcp-Session-Id: $SESSION_ID" \
@@ -161,6 +199,43 @@ ls -la OUTPUT_PATH/screenshot.png  # Must be > 10KB
 
 If the file is under 10KB, the capture failed — re-run the curl sequence.
 
+### Step 5b: Capture Per-Section Screenshots
+
+After the full-artboard screenshot is confirmed, loop through each section node ID collected in Step 2 and capture a per-section screenshot using the same HTTP endpoint and session. Save each to `sections/<kebab-case-name>.png`.
+
+```bash
+# Re-use the existing $SESSION_ID from Step 5 — no need to re-initialize.
+# For each section (SECTION_NODE_ID, SECTION_NAME from Step 2):
+
+curl -s -X POST "${BASE_URL:-http://localhost:29979}/mcp" \
+  -H "Content-Type: application/json" \
+  -H "Accept: application/json, text/event-stream" \
+  -H "Mcp-Session-Id: $SESSION_ID" \
+  -d '{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"get_screenshot","arguments":{"nodeId":"SECTION_NODE_ID","scale":2,"transparent":false}}}' \
+  -o /tmp/paper_section_response.raw
+
+python3 -c "
+import json, base64
+with open('/tmp/paper_section_response.raw') as f:
+    for line in f.read().split('\n'):
+        if line.startswith('data: '):
+            parsed = json.loads(line[6:])
+            img = parsed['result']['content'][0]['data']
+            with open('OUTPUT_PATH/sections/SECTION_NAME.png', 'wb') as out:
+                out.write(base64.b64decode(img))
+            break
+"
+```
+
+Replace `SECTION_NODE_ID` with the section's node ID, and `SECTION_NAME` with the kebab-case section name (same name used for the `.jsx` file).
+
+**Verify each section screenshot:**
+```bash
+ls -la OUTPUT_PATH/sections/*.png  # Each must be > 5KB
+```
+
+If any section screenshot is under 5KB, retry that individual section. The full-artboard screenshot (`screenshot.png`) is always kept — per-section screenshots are supplementary.
+
 ---
 
 ## Step 6: Write Bundle & Verify
@@ -169,17 +244,20 @@ Write all files to `<repo-path>/pipeline-config/design-refs/<spec-identifier>/`:
 
 ```
 pipeline-config/design-refs/{spec-identifier}/
-├── screenshot.png
+├── screenshot.png              # Full-artboard screenshot (always kept)
 ├── structure.md
 ├── styles.json
 └── sections/
-    └── <kebab-case-name>.jsx   # One per top-level artboard child
+    ├── <kebab-case-name>.jsx   # One per top-level artboard child (with DATA annotations)
+    └── <kebab-case-name>.png   # Per-section screenshot (one per section)
 ```
 
 ### Quality Checklist (verify before declaring done)
 
 - [ ] Every top-level artboard child has a corresponding `.jsx` file in `sections/`
+- [ ] Each `.jsx` file contains `{/* DATA: ... */}` annotations for dynamic/ambiguous values (no annotations on static style values)
 - [ ] `screenshot.png` exists and is > 10KB (smaller means the capture failed)
+- [ ] Every section has a corresponding `.png` file in `sections/` (each > 5KB)
 - [ ] `styles.json` contains at least `colors` and `typography` keys
 - [ ] `structure.md` lists all sections with dimensions
 - [ ] No node IDs appear in any output file
