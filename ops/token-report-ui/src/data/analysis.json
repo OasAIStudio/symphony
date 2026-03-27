@@ -463,6 +463,150 @@
       "title": "Foundation setup",
       "tokens": 95000,
       "linear_url": "https://linear.app/mobilyze-llc/issue/SYMPH-112"
+    },
+    {
+      "identifier": "SYMPH-113",
+      "title": "Auth middleware overhaul",
+      "tokens": 92000,
+      "linear_url": "https://linear.app/mobilyze-llc/issue/SYMPH-113"
+    },
+    {
+      "identifier": "SYMPH-114",
+      "title": "Database migration batch runner",
+      "tokens": 88000,
+      "linear_url": "https://linear.app/mobilyze-llc/issue/SYMPH-114"
+    },
+    {
+      "identifier": "JONY-55",
+      "title": "Memory management refactor",
+      "tokens": 85000,
+      "linear_url": "https://linear.app/mobilyze-llc/issue/JONY-55"
+    },
+    {
+      "identifier": "SYMPH-115",
+      "title": "Pipeline retry logic",
+      "tokens": 82000,
+      "linear_url": "https://linear.app/mobilyze-llc/issue/SYMPH-115"
+    },
+    {
+      "identifier": "SYMPH-116",
+      "title": "Webhook handler consolidation",
+      "tokens": 79000,
+      "linear_url": "https://linear.app/mobilyze-llc/issue/SYMPH-116"
+    },
+    {
+      "identifier": "JONY-58",
+      "title": "Context window optimization",
+      "tokens": 76000,
+      "linear_url": "https://linear.app/mobilyze-llc/issue/JONY-58"
+    },
+    {
+      "identifier": "SYMPH-117",
+      "title": "Token counting accuracy fix",
+      "tokens": 73000,
+      "linear_url": "https://linear.app/mobilyze-llc/issue/SYMPH-117"
+    },
+    {
+      "identifier": "SYMPH-118",
+      "title": "Rate limiter implementation",
+      "tokens": 70000,
+      "linear_url": "https://linear.app/mobilyze-llc/issue/SYMPH-118"
+    },
+    {
+      "identifier": "JONY-60",
+      "title": "Prompt template versioning",
+      "tokens": 67000,
+      "linear_url": "https://linear.app/mobilyze-llc/issue/JONY-60"
+    },
+    {
+      "identifier": "SYMPH-119",
+      "title": "Error reporting dashboard",
+      "tokens": 64000,
+      "linear_url": "https://linear.app/mobilyze-llc/issue/SYMPH-119"
+    },
+    {
+      "identifier": "SYMPH-120",
+      "title": "Config hot-reload support",
+      "tokens": 61000,
+      "linear_url": "https://linear.app/mobilyze-llc/issue/SYMPH-120"
+    },
+    {
+      "identifier": "JONY-63",
+      "title": "Tool execution sandbox",
+      "tokens": 58000,
+      "linear_url": "https://linear.app/mobilyze-llc/issue/JONY-63"
+    },
+    {
+      "identifier": "SYMPH-121",
+      "title": "Metrics collection pipeline",
+      "tokens": 55000,
+      "linear_url": "https://linear.app/mobilyze-llc/issue/SYMPH-121"
+    },
+    {
+      "identifier": "SYMPH-122",
+      "title": "Session persistence layer",
+      "tokens": 52000,
+      "linear_url": "https://linear.app/mobilyze-llc/issue/SYMPH-122"
+    },
+    {
+      "identifier": "JONY-65",
+      "title": "Code review automation",
+      "tokens": 49000,
+      "linear_url": "https://linear.app/mobilyze-llc/issue/JONY-65"
+    },
+    {
+      "identifier": "SYMPH-123",
+      "title": "Notification dispatch service",
+      "tokens": 46000,
+      "linear_url": "https://linear.app/mobilyze-llc/issue/SYMPH-123"
+    },
+    {
+      "identifier": "SYMPH-124",
+      "title": "Cache invalidation strategy",
+      "tokens": 43000,
+      "linear_url": "https://linear.app/mobilyze-llc/issue/SYMPH-124"
+    },
+    {
+      "identifier": "JONY-67",
+      "title": "Test harness improvements",
+      "tokens": 40000,
+      "linear_url": "https://linear.app/mobilyze-llc/issue/JONY-67"
+    },
+    {
+      "identifier": "SYMPH-125",
+      "title": "Deployment rollback mechanism",
+      "tokens": 37000,
+      "linear_url": "https://linear.app/mobilyze-llc/issue/SYMPH-125"
+    },
+    {
+      "identifier": "SYMPH-126",
+      "title": "Log aggregation service",
+      "tokens": 34000,
+      "linear_url": "https://linear.app/mobilyze-llc/issue/SYMPH-126"
+    },
+    {
+      "identifier": "JONY-69",
+      "title": "API versioning middleware",
+      "tokens": 31000,
+      "linear_url": "https://linear.app/mobilyze-llc/issue/JONY-69"
+    },
+    {
+      "identifier": "SYMPH-127",
+      "title": "Feature flag integration",
+      "tokens": 28000,
+      "linear_url": "https://linear.app/mobilyze-llc/issue/SYMPH-127"
+    },
+    {
+      "identifier": "SYMPH-128",
+      "title": "Health check endpoint",
+      "tokens": 25000,
+      "linear_url": "https://linear.app/mobilyze-llc/issue/SYMPH-128"
+    },
+    {
+      "identifier": "SYMPH-129",
+      "title": "Queue worker scaling",
+      "tokens": 22000,
+      "linear_url": "https://linear.app/mobilyze-llc/issue/SYMPH-129"
     }
   ],
   "per_ticket_series": [45000, 50000, 54000, 51000, 52000]

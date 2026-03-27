@@ -192,8 +192,38 @@ describe("OutlierAnalysis", () => {
     expect(html).toContain("SYMPH-98");
     expect(html).toContain("JONY-42");
     // SYMPH-179: multiplier displayed instead of z-score
-    expect(html).toContain("8.5x mean");
+    expect(html).toContain("8.5<!-- -->x mean");
     expect(html).toContain("mobilyze-llc/issue/SYMPH-98");
+  });
+
+  it("displays hypothesis text for each outlier", () => {
+    const outliers = Array.isArray(data.outliers) ? data.outliers : [];
+    const html = renderToString(<OutlierAnalysis outliers={outliers} />);
+    // Per CH-1: outlier cards show hypothesis + multiplier only
+    for (const o of outliers) {
+      expect(html).toContain(o.hypothesis);
+    }
+  });
+
+  it("displays multiplier not z-score", () => {
+    const outliers = Array.isArray(data.outliers) ? data.outliers : [];
+    const html = renderToString(<OutlierAnalysis outliers={outliers} />);
+    // Multiplier = total_tokens / mean (Q-2 decision)
+    expect(html).toContain("8.5<!-- -->x mean");
+    expect(html).toContain("3.4<!-- -->x mean");
+    // z-score should NOT appear in rendered output
+    expect(html).not.toContain("z=");
+    expect(html).not.toContain("z_score");
+  });
+
+  it("links outlier identifiers to Linear", () => {
+    const outliers = Array.isArray(data.outliers) ? data.outliers : [];
+    const html = renderToString(<OutlierAnalysis outliers={outliers} />);
+    for (const o of outliers) {
+      expect(html).toContain(
+        `https://linear.app/mobilyze-llc/issue/${o.issue_identifier}`,
+      );
+    }
   });
 
   it("renders empty state", () => {
@@ -223,6 +253,48 @@ describe("IssueLeaderboard", () => {
     expect(html).toContain("Test issue");
     expect(html).toContain("100,000");
     expect(html).toContain("mobilyze-llc/issue/SYMPH-100");
+  });
+
+  it("slices to top 25 entries (matching renderHtml() behavior)", () => {
+    // Build 27 items to verify only the first 25 are rendered
+    const items = Array.from({ length: 27 }, (_, i) => ({
+      identifier: `TEST-${i + 1}`,
+      title: `Issue number ${i + 1}`,
+      tokens: 100000 - i * 1000,
+      linear_url: `https://linear.app/mobilyze-llc/issue/TEST-${i + 1}`,
+    }));
+    const html = renderToString(<IssueLeaderboard leaderboard={items} />);
+    // Items 1–25 should be present
+    expect(html).toContain("TEST-1");
+    expect(html).toContain("TEST-25");
+    // Items 26–27 should be excluded
+    expect(html).not.toContain("TEST-26");
+    expect(html).not.toContain("TEST-27");
+  });
+
+  it("renders fixture leaderboard with 27 entries showing top 25", () => {
+    const html = renderToString(
+      <IssueLeaderboard leaderboard={data.leaderboard} />,
+    );
+    // First entry (rank 1) present
+    expect(html).toContain("SYMPH-98");
+    expect(html).toContain("450,000");
+    // 25th entry (SYMPH-127) present
+    expect(html).toContain("SYMPH-127");
+    // 26th entry (SYMPH-128) excluded by top-25 slice
+    expect(html).not.toContain("SYMPH-128");
+    // 27th entry (SYMPH-129) excluded
+    expect(html).not.toContain("SYMPH-129");
+  });
+
+  it("links all leaderboard identifiers to Linear", () => {
+    const html = renderToString(
+      <IssueLeaderboard leaderboard={data.leaderboard} />,
+    );
+    // Verify URL pattern for entries within top 25
+    expect(html).toContain("https://linear.app/mobilyze-llc/issue/SYMPH-98");
+    expect(html).toContain("https://linear.app/mobilyze-llc/issue/JONY-42");
+    expect(html).toContain("https://linear.app/mobilyze-llc/issue/SYMPH-112");
   });
 });
 
