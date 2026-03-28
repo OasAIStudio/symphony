@@ -54,8 +54,7 @@
   },
   "executive_summary": {
     "total_tokens": {
-      "value": 18420000,
-      "wow_delta_pct": 12.3
+      "value": 18420000
     },
     "total_stages": {
       "value": 312
@@ -352,8 +351,7 @@
   "per_ticket_trend": {
     "median": 52000,
     "mean": 59000,
-    "ticket_count": 47,
-    "wow_delta_pct": -5.2
+    "ticket_count": 47
   },
   "per_product": {
     "symphony-ts": {
@@ -416,13 +414,9 @@
         {
           "type": "ticket_mix",
           "description": "Switched to prompt caching strategy"
-        },
-        {
-          "type": "volume_shift",
-          "description": "3 fewer implement stages vs prior week"
         }
       ],
-      "llm_insight": "The 15% drop in tokens/turn correlates with the caching rollout on Mar 4; fewer redundant context fetches per turn."
+      "llm_insight": null
     },
     {
       "date": "2026-03-12",
@@ -438,7 +432,7 @@
           "description": "Enabled extended cache TTL"
         }
       ],
-      "llm_insight": "Extended TTL reduced cache misses on long-running implement stages, lifting hit rate from 72% to 78%."
+      "llm_insight": null
     }
   ],
   "outliers": [
