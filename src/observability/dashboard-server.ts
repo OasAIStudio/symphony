@@ -1,3 +1,4 @@
+import { execFile as execFileCb } from "node:child_process";
 import {
   type IncomingMessage,
   type Server,
@@ -27,6 +28,7 @@ import {
 } from "./dashboard-render.js";
 
 const DEFAULT_SNAPSHOT_TIMEOUT_MS = 1_000;
+const GITHUB_QUEUE_CACHE_TTL_MS = 15_000;
 
 export interface IssueDetailRunningState {
   session_id: string | null;
@@ -108,6 +110,9 @@ export interface DashboardServerHost {
   subscribeToSnapshots?(listener: () => void): () => void;
 }
 
+/** Async function that runs `gh` with the given args and returns stdout. */
+export type ExecGh = (args: string[]) => Promise<string>;
+
 export interface DashboardServerOptions {
   host: DashboardServerHost;
   hostname?: string;
@@ -115,6 +120,10 @@ export interface DashboardServerOptions {
   refreshMs?: number;
   renderIntervalMs?: number;
   liveUpdatesEnabled?: boolean;
+  /** GitHub repo slug (e.g. "org/repo"). Falls back to REPO_URL env var. */
+  githubRepoSlug?: string;
+  /** Injectable gh CLI executor for testing. Defaults to child_process.execFile("gh", ...). */
+  execGh?: ExecGh;
 }
 
 export interface DashboardServerInstance {
@@ -203,6 +212,9 @@ export function createDashboardRequestHandler(
   const renderOptions: DashboardRenderOptions = {
     liveUpdatesEnabled: options.liveUpdatesEnabled ?? true,
   };
+  const githubRepoSlug = resolveRepoSlug(options.githubRepoSlug);
+  const execGh = options.execGh ?? defaultExecGh;
+  let githubQueueCache: GitHubQueueCache | null = null;
 
   return async (request, response) => {
     try {
@@ -280,6 +292,47 @@ export function createDashboardRequestHandler(
         return;
       }
 
+      if (url.pathname === "/api/v1/github/queue") {
+        if (method !== "GET") {
+          writeMethodNotAllowed(response, ["GET"]);
+          return;
+        }
+
+        if (githubRepoSlug === null) {
+          writeJsonError(response, 500, ERROR_CODES.githubCliFailed, {
+            message:
+              "GitHub repo slug is not configured. Set githubRepoSlug in options or REPO_URL environment variable.",
+          });
+          return;
+        }
+
+        // Return cached response if still valid
+        if (
+          githubQueueCache !== null &&
+          Date.now() < githubQueueCache.expiresAt
+        ) {
+          writeJson(response, 200, { ...githubQueueCache.data, cached: true });
+          return;
+        }
+
+        try {
+          const data = await fetchGitHubQueue(githubRepoSlug, execGh);
+          githubQueueCache = {
+            data,
+            expiresAt: Date.now() + GITHUB_QUEUE_CACHE_TTL_MS,
+          };
+          writeJson(response, 200, data);
+        } catch (error) {
+          writeJsonError(response, 502, ERROR_CODES.githubCliFailed, {
+            message:
+              error instanceof Error
+                ? error.message
+                : "GitHub CLI command failed.",
+          });
+        }
+        return;
+      }
+
       if (url.pathname.startsWith("/api/v1/")) {
         const rest = url.pathname.slice("/api/v1/".length);
         const stopMatch = rest.match(/^(.+)\/stop$/);
@@ -336,6 +389,175 @@ export function createDashboardRequestHandler(
         message: toErrorMessage(error),
       });
     }
+  };
+}
+
+// ── GitHub merge queue types & helpers ────────────────────────────
+
+export interface GitHubQueuePR {
+  number: number;
+  title: string;
+  url: string;
+  author: string;
+  state: string;
+  mergedAt: string | null;
+  labels: string[];
+}
+
+export interface GitHubQueueAlert {
+  number: number;
+  title: string;
+  url: string;
+  createdAt: string;
+}
+
+export interface GitHubQueueResponse {
+  repo: string;
+  cached: boolean;
+  fetched_at: string;
+  in_queue: GitHubQueuePR[];
+  recently_merged: GitHubQueuePR[];
+  rejected: GitHubQueuePR[];
+  alerts: GitHubQueueAlert[];
+}
+
+interface GitHubQueueCache {
+  data: GitHubQueueResponse;
+  expiresAt: number;
+}
+
+function resolveRepoSlug(explicit?: string): string | null {
+  if (explicit !== undefined && explicit !== "") {
+    return explicit;
+  }
+  const repoUrl = process.env.REPO_URL;
+  if (repoUrl === undefined || repoUrl === "") {
+    return null;
+  }
+  // Extract owner/repo from https://github.com/owner/repo(.git)
+  return repoUrl.replace(/^https?:\/\/github\.com\//, "").replace(/\.git$/, "");
+}
+
+interface GhPrJsonItem {
+  number: number;
+  title: string;
+  url: string;
+  author: { login: string };
+  state: string;
+  mergedAt: string | null;
+  labels: Array<{ name: string }>;
+}
+
+interface GhIssueJsonItem {
+  number: number;
+  title: string;
+  url: string;
+  createdAt: string;
+}
+
+function categorizePRs(prs: GhPrJsonItem[]): {
+  in_queue: GitHubQueuePR[];
+  recently_merged: GitHubQueuePR[];
+  rejected: GitHubQueuePR[];
+} {
+  const in_queue: GitHubQueuePR[] = [];
+  const recently_merged: GitHubQueuePR[] = [];
+  const rejected: GitHubQueuePR[] = [];
+
+  for (const pr of prs) {
+    const mapped: GitHubQueuePR = {
+      number: pr.number,
+      title: pr.title,
+      url: pr.url,
+      author: pr.author.login,
+      state: pr.state,
+      mergedAt: pr.mergedAt,
+      labels: pr.labels.map((l) => l.name),
+    };
+
+    if (pr.state === "MERGED") {
+      recently_merged.push(mapped);
+    } else if (pr.state === "CLOSED") {
+      rejected.push(mapped);
+    } else {
+      // OPEN PRs are considered in the queue
+      in_queue.push(mapped);
+    }
+  }
+
+  return { in_queue, recently_merged, rejected };
+}
+
+function defaultExecGh(args: string[]): Promise<string> {
+  return new Promise((resolve, reject) => {
+    execFileCb(
+      "gh",
+      args,
+      { encoding: "utf-8", maxBuffer: 2 * 1024 * 1024, timeout: 15_000 },
+      (error, stdout) => {
+        if (error) {
+          reject(error);
+          return;
+        }
+        resolve(stdout);
+      },
+    );
+  });
+}
+
+async function fetchGitHubQueue(
+  repoSlug: string,
+  execGh: ExecGh,
+): Promise<GitHubQueueResponse> {
+  const prFields = "number,title,url,author,state,mergedAt,labels";
+
+  const [prStdout, issueStdout] = await Promise.all([
+    execGh([
+      "pr",
+      "list",
+      "--repo",
+      repoSlug,
+      "--json",
+      prFields,
+      "--limit",
+      "50",
+      "--state",
+      "all",
+    ]),
+    execGh([
+      "issue",
+      "list",
+      "--repo",
+      repoSlug,
+      "--json",
+      "number,title,url,createdAt",
+      "--label",
+      "pipeline-halt",
+      "--limit",
+      "20",
+    ]),
+  ]);
+
+  const prs = JSON.parse(prStdout) as GhPrJsonItem[];
+  const issues = JSON.parse(issueStdout) as GhIssueJsonItem[];
+
+  const { in_queue, recently_merged, rejected } = categorizePRs(prs);
+
+  const alerts: GitHubQueueAlert[] = issues.map((issue) => ({
+    number: issue.number,
+    title: issue.title,
+    url: issue.url,
+    createdAt: issue.createdAt,
+  }));
+
+  return {
+    repo: repoSlug,
+    cached: false,
+    fetched_at: new Date().toISOString(),
+    in_queue,
+    recently_merged,
+    rejected,
+    alerts,
   };
 }
 
