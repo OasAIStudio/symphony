@@ -192,6 +192,11 @@ cmd_start() {
     return 0
   fi
 
+  # Re-register if previously stopped via bootout
+  if ! launchctl print "gui/$(id -u)/${SERVICE_LABEL}" &>/dev/null; then
+    launchctl bootstrap "gui/$(id -u)" "$PLIST_PATH"
+  fi
+
   launchctl kickstart "gui/$(id -u)/${SERVICE_LABEL}"
   ok "Service started: $SERVICE_LABEL"
   info "Dashboard: http://localhost:$(get_port)"
@@ -206,18 +211,42 @@ cmd_stop() {
     return 0
   fi
 
-  launchctl kill SIGTERM "gui/$(id -u)/${SERVICE_LABEL}"
+  # Must bootout (deregister) — plain SIGTERM/SIGKILL won't work because
+  # KeepAlive: SuccessfulExit: false makes launchd respawn immediately.
+  info "Stopping service (bootout)..."
+  launchctl bootout "gui/$(id -u)/${SERVICE_LABEL}" 2>/dev/null || true
+
+  # Wait for process to actually die
+  local waited=0
+  while is_running && [[ $waited -lt 15 ]]; do
+    sleep 1
+    ((waited++))
+  done
+
   ok "Service stopped: $SERVICE_LABEL"
 }
 
 cmd_restart() {
   check_installed
 
+  # Use kickstart -k for atomic kill+restart — avoids the race condition
+  # where KeepAlive respawns the process between stop and start.
   if is_running; then
-    cmd_stop
-    sleep 1
+    info "Restarting service..."
+    launchctl kickstart -k "gui/$(id -u)/${SERVICE_LABEL}"
+  else
+    launchctl kickstart "gui/$(id -u)/${SERVICE_LABEL}"
   fi
-  cmd_start
+
+  # Verify the new process is up
+  sleep 2
+  if is_running; then
+    ok "Service restarted: $SERVICE_LABEL"
+    info "Dashboard: http://localhost:$(get_port)"
+    info "Logs: $LOG_DIR/"
+  else
+    die "Service failed to start after restart."
+  fi
 }
 
 cmd_status() {
