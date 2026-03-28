@@ -7,6 +7,7 @@ import {
   type DashboardServerHost,
   type IssueDetailResponse,
   type RefreshResponse,
+  type StopIssueResponse,
   createDashboardServer,
   startDashboardServer,
 } from "../../src/observability/dashboard-server.js";
@@ -25,7 +26,7 @@ describe("dashboard server", () => {
     });
     servers.push(server);
 
-    expect(server.hostname).toBe("127.0.0.1");
+    expect(server.hostname).toBe("0.0.0.0");
     expect(server.port).toBeGreaterThan(0);
 
     const dashboard = await sendRequest(server.port, {
@@ -279,6 +280,8 @@ describe("dashboard server", () => {
       counts: {
         running: 2,
         retrying: 1,
+        completed: 0,
+        failed: 0,
       },
     };
     emitUpdate();
@@ -295,6 +298,177 @@ describe("dashboard server", () => {
     stream.close();
   });
 
+  it("renders expandable detail rows with toggle and detail panel for running sessions", async () => {
+    const server = await startDashboardServer({
+      port: 0,
+      host: createHost(),
+    });
+    servers.push(server);
+
+    const dashboard = await sendRequest(server.port, {
+      method: "GET",
+      path: "/",
+    });
+    expect(dashboard.statusCode).toBe(200);
+    expect(dashboard.body).toContain("expand-toggle");
+    expect(dashboard.body).toContain("detail-row");
+    expect(dashboard.body).toContain("detail-panel");
+    expect(dashboard.body).toContain("detail-grid");
+    expect(dashboard.body).toContain("Token breakdown");
+    expect(dashboard.body).toContain("Recent activity");
+    expect(dashboard.body).toContain("Execution history");
+    expect(dashboard.body).toContain("aria-expanded");
+    expect(dashboard.body).toContain("Cache read");
+    expect(dashboard.body).toContain("Cache write");
+    expect(dashboard.body).toContain("Reasoning");
+  });
+
+  it("renders context section in detail panel with stage, activity summary, health reason, and rework count", async () => {
+    const baseRow = createSnapshot().running[0]!;
+    const snapshotWithContext: RuntimeSnapshot = {
+      ...createSnapshot(),
+      running: [
+        {
+          ...baseRow,
+          pipeline_stage: "implement",
+          activity_summary: "Reviewing PR #42",
+          health: "yellow",
+          health_reason: "high token burn: 23,400 tokens/turn",
+          rework_count: 2,
+        },
+      ],
+    };
+    const server = await startDashboardServer({
+      port: 0,
+      host: createHost({
+        getRuntimeSnapshot: () => snapshotWithContext,
+      }),
+    });
+    servers.push(server);
+
+    const dashboard = await sendRequest(server.port, {
+      method: "GET",
+      path: "/",
+    });
+    expect(dashboard.statusCode).toBe(200);
+    // Use class= attribute form since CSS also defines these class names
+    expect(dashboard.body).toContain('class="context-section"');
+    expect(dashboard.body).toContain('class="stage-badge"');
+    expect(dashboard.body).toContain("implement");
+    expect(dashboard.body).toContain("Reviewing PR #42");
+    expect(dashboard.body).toContain('class="context-health-yellow"');
+    expect(dashboard.body).toContain("high token burn: 23,400 tokens/turn");
+    expect(dashboard.body).toContain("state-badge-warning");
+    expect(dashboard.body).toContain("Rework");
+    // Context section (rendered element) appears before detail-grid in the HTML
+    const contextIdx = dashboard.body.indexOf('class="context-section"');
+    const gridIdx = dashboard.body.indexOf('class="detail-grid"');
+    expect(contextIdx).toBeGreaterThan(-1);
+    expect(gridIdx).toBeGreaterThan(-1);
+    expect(contextIdx).toBeLessThan(gridIdx);
+  });
+
+  it("omits context section when pipeline_stage, activity_summary, health_reason, and rework_count are all absent", async () => {
+    const baseRow = createSnapshot().running[0]!;
+    const snapshotNoContext: RuntimeSnapshot = {
+      ...createSnapshot(),
+      running: [
+        {
+          ...baseRow,
+          pipeline_stage: null,
+          activity_summary: null,
+          health: "green",
+          health_reason: null,
+        },
+      ],
+    };
+    const server = await startDashboardServer({
+      port: 0,
+      host: createHost({
+        getRuntimeSnapshot: () => snapshotNoContext,
+      }),
+    });
+    servers.push(server);
+
+    const dashboard = await sendRequest(server.port, {
+      method: "GET",
+      path: "/",
+    });
+    expect(dashboard.statusCode).toBe(200);
+    expect(dashboard.body).toContain("detail-panel");
+    expect(dashboard.body).toContain("Token breakdown");
+    // The rendered detail-row should not contain the context-section opening tag.
+    // The JS code embeds class="context-section" as a string literal, so we check
+    // only the server-rendered detail-row section (between detail-row and /tr).
+    const detailRowStart = dashboard.body.indexOf('class="detail-row"');
+    const detailRowEnd = dashboard.body.indexOf("</tr>", detailRowStart);
+    expect(detailRowStart).toBeGreaterThan(-1);
+    const detailRowHtml = dashboard.body.slice(detailRowStart, detailRowEnd);
+    expect(detailRowHtml).not.toContain('class="context-section"');
+    expect(detailRowHtml).toContain('class="detail-grid"');
+  });
+
+  it("shows context-health-red for stalled (red health) agent in detail panel", async () => {
+    const baseRow = createSnapshot().running[0]!;
+    const snapshotRed: RuntimeSnapshot = {
+      ...createSnapshot(),
+      running: [
+        {
+          ...baseRow,
+          pipeline_stage: "investigate",
+          activity_summary: null,
+          health: "red",
+          health_reason: "stalled: no activity for 145s",
+        },
+      ],
+    };
+    const server = await startDashboardServer({
+      port: 0,
+      host: createHost({
+        getRuntimeSnapshot: () => snapshotRed,
+      }),
+    });
+    servers.push(server);
+
+    const dashboard = await sendRequest(server.port, {
+      method: "GET",
+      path: "/",
+    });
+    expect(dashboard.statusCode).toBe(200);
+    expect(dashboard.body).toContain("context-health-red");
+    expect(dashboard.body).toContain("stalled: no activity for 145s");
+    expect(dashboard.body).toContain("investigate");
+    // The rendered context item uses context-health-red, not context-health-yellow
+    expect(dashboard.body).not.toContain('class="context-health-yellow"');
+  });
+
+  it("renders an empty state for the running sessions table when there are no running sessions", async () => {
+    const emptySnapshot: RuntimeSnapshot = {
+      ...createSnapshot(),
+      counts: { running: 0, retrying: 0, completed: 0, failed: 0 },
+      running: [],
+      retrying: [],
+    };
+    const server = await startDashboardServer({
+      port: 0,
+      host: createHost({
+        getRuntimeSnapshot: () => emptySnapshot,
+      }),
+    });
+    servers.push(server);
+
+    const dashboard = await sendRequest(server.port, {
+      method: "GET",
+      path: "/",
+    });
+    expect(dashboard.statusCode).toBe(200);
+    expect(dashboard.body).toContain("No active sessions");
+    // Server-rendered running-rows tbody should show empty state, not session rows
+    expect(dashboard.body).toContain(
+      'id="running-rows"><tr><td colspan="7"><p class="empty-state">No active sessions.</p></td></tr>',
+    );
+  });
+
   it("returns a plain 404 for undefined routes", async () => {
     const server = await startDashboardServer({
       port: 0,
@@ -309,6 +483,342 @@ describe("dashboard server", () => {
     expect(response.statusCode).toBe(404);
     expect(response.headers["content-type"]).toContain("text/plain");
     expect(response.body).toContain("Not found: /missing");
+  });
+
+  it("includes CORS headers on GET responses", async () => {
+    const server = await startDashboardServer({
+      port: 0,
+      host: createHost(),
+    });
+    servers.push(server);
+
+    const response = await sendRequest(server.port, {
+      method: "GET",
+      path: "/api/v1/state",
+    });
+    expect(response.statusCode).toBe(200);
+    expect(response.headers["access-control-allow-origin"]).toBe("*");
+    expect(response.headers["access-control-allow-methods"]).toBe(
+      "GET, POST, OPTIONS",
+    );
+    expect(response.headers["access-control-allow-headers"]).toBe(
+      "Content-Type, Authorization",
+    );
+  });
+
+  it("handles OPTIONS preflight with 204 and CORS headers", async () => {
+    const server = await startDashboardServer({
+      port: 0,
+      host: createHost(),
+    });
+    servers.push(server);
+
+    const response = await sendRequest(server.port, {
+      method: "OPTIONS",
+      path: "/api/v1/state",
+    });
+    expect(response.statusCode).toBe(204);
+    expect(response.body).toBe("");
+    expect(response.headers["access-control-allow-origin"]).toBe("*");
+    expect(response.headers["access-control-allow-methods"]).toBe(
+      "GET, POST, OPTIONS",
+    );
+    expect(response.headers["access-control-allow-headers"]).toBe(
+      "Content-Type, Authorization",
+    );
+  });
+
+  it("stops a running issue via POST /api/v1/{identifier}/stop", async () => {
+    const stopCalls: string[] = [];
+    const server = await startDashboardServer({
+      port: 0,
+      host: createHost({
+        requestIssueStop: (issueIdentifier) => {
+          stopCalls.push(issueIdentifier);
+          return {
+            issue_identifier: issueIdentifier,
+            stopped: true,
+            reason: "manual_stop",
+          } satisfies StopIssueResponse;
+        },
+      }),
+    });
+    servers.push(server);
+
+    const response = await sendRequest(server.port, {
+      method: "POST",
+      path: "/api/v1/ABC-123/stop",
+      body: "{}",
+      headers: { "content-type": "application/json" },
+    });
+    expect(response.statusCode).toBe(200);
+    expect(JSON.parse(response.body)).toEqual({
+      issue_identifier: "ABC-123",
+      stopped: true,
+      reason: "manual_stop",
+    });
+    expect(stopCalls).toEqual(["ABC-123"]);
+  });
+
+  it("returns 404 when stopping an issue that is not running", async () => {
+    const server = await startDashboardServer({
+      port: 0,
+      host: createHost({
+        requestIssueStop: (issueIdentifier) => ({
+          issue_identifier: issueIdentifier,
+          stopped: false,
+          reason: `Issue '${issueIdentifier}' is not currently running.`,
+        }),
+      }),
+    });
+    servers.push(server);
+
+    const response = await sendRequest(server.port, {
+      method: "POST",
+      path: "/api/v1/UNKNOWN-1/stop",
+      body: "{}",
+      headers: { "content-type": "application/json" },
+    });
+    expect(response.statusCode).toBe(404);
+    expect(JSON.parse(response.body)).toEqual({
+      issue_identifier: "UNKNOWN-1",
+      stopped: false,
+      reason: "Issue 'UNKNOWN-1' is not currently running.",
+    });
+  });
+
+  it("returns 405 for GET on the stop endpoint", async () => {
+    const server = await startDashboardServer({
+      port: 0,
+      host: createHost({
+        requestIssueStop: () => ({
+          issue_identifier: "ABC-123",
+          stopped: true,
+          reason: "manual_stop",
+        }),
+      }),
+    });
+    servers.push(server);
+
+    const response = await sendRequest(server.port, {
+      method: "GET",
+      path: "/api/v1/ABC-123/stop",
+    });
+    expect(response.statusCode).toBe(405);
+    expect(response.headers.allow).toBe("POST");
+  });
+
+  it("returns 501 when requestIssueStop is not implemented on the host", async () => {
+    const server = await startDashboardServer({
+      port: 0,
+      host: createHost(),
+    });
+    servers.push(server);
+
+    const response = await sendRequest(server.port, {
+      method: "POST",
+      path: "/api/v1/ABC-123/stop",
+      body: "{}",
+      headers: { "content-type": "application/json" },
+    });
+    expect(response.statusCode).toBe(501);
+    expect(JSON.parse(response.body)).toEqual({
+      error: {
+        code: "not_implemented",
+        message: "Stop issue is not supported by this host.",
+      },
+    });
+  });
+
+  it("returns structured deploy preview JSON with required fields", async () => {
+    const dryRunOutput = [
+      "\x1b[36mPre-deploy version: v1.2.3\x1b[0m",
+      "\x1b[36mPost-deploy version: v1.3.0\x1b[0m",
+      "symphony-ts: abc1234 → def5678",
+      "[dry-run] restart symphony service",
+      "[dry-run] run database migrations",
+    ].join("\n");
+
+    const server = await startDashboardServer({
+      port: 0,
+      host: createHost(),
+      execDeploy: async (_args) => dryRunOutput,
+    });
+    servers.push(server);
+
+    const response = await sendRequest(server.port, {
+      method: "POST",
+      path: "/api/v1/deploy/preview",
+      body: "{}",
+      headers: { "content-type": "application/json" },
+    });
+    expect(response.statusCode).toBe(200);
+    const body = JSON.parse(response.body);
+    expect(body).toHaveProperty("current_version", "v1.2.3");
+    expect(body).toHaveProperty("target_version", "v1.3.0");
+    expect(body).toHaveProperty("commits_ahead", 1);
+    expect(body).toHaveProperty("actions");
+    expect(body.actions).toEqual([
+      "restart symphony service",
+      "run database migrations",
+    ]);
+  });
+
+  it("deploy preview includes running_issues_count from snapshot", async () => {
+    const dryRunOutput = [
+      "Pre-deploy version: v1.0.0",
+      "Post-deploy version: v1.0.1",
+      "symphony-ts: aaa1111 → bbb2222",
+    ].join("\n");
+
+    const server = await startDashboardServer({
+      port: 0,
+      host: createHost(),
+      execDeploy: async (_args) => dryRunOutput,
+    });
+    servers.push(server);
+
+    const response = await sendRequest(server.port, {
+      method: "POST",
+      path: "/api/v1/deploy/preview",
+      body: "{}",
+      headers: { "content-type": "application/json" },
+    });
+    expect(response.statusCode).toBe(200);
+    const body = JSON.parse(response.body);
+    expect(body).toHaveProperty("running_issues_count");
+    // The default snapshot has counts.running = 1
+    expect(body.running_issues_count).toBe(1);
+  });
+
+  it("deploy streams SSE events with deploy_output type", async () => {
+    const server = await startDashboardServer({
+      port: 0,
+      host: createHost(),
+      spawnDeploy: (_args) => {
+        // Create a mock child process using spawn with echo
+        const { spawn: spawnChild } = require("node:child_process");
+        return spawnChild("printf", ["deploying step 1\ndeploying step 2\n"]);
+      },
+    });
+    servers.push(server);
+
+    const stream = await openDeployStream(server.port, "/api/v1/deploy");
+    const events = await stream.allEvents();
+    const outputEvents = events.filter((e) => e.event === "deploy_output");
+    expect(outputEvents.length).toBeGreaterThanOrEqual(2);
+    expect(JSON.parse(outputEvents[0]!.data)).toHaveProperty("line");
+    expect(JSON.parse(outputEvents[0]!.data).line).toBe("deploying step 1");
+    expect(JSON.parse(outputEvents[1]!.data).line).toBe("deploying step 2");
+  });
+
+  it("deploy stream ends with deploy_complete event", async () => {
+    const server = await startDashboardServer({
+      port: 0,
+      host: createHost(),
+      spawnDeploy: (_args) => {
+        const { spawn: spawnChild } = require("node:child_process");
+        return spawnChild("printf", ["done\n"]);
+      },
+    });
+    servers.push(server);
+
+    const stream = await openDeployStream(server.port, "/api/v1/deploy");
+    const events = await stream.allEvents();
+    const completeEvents = events.filter((e) => e.event === "deploy_complete");
+    expect(completeEvents).toHaveLength(1);
+    const complete = JSON.parse(completeEvents[0]!.data);
+    expect(complete).toHaveProperty("success", true);
+    expect(complete).toHaveProperty("exit_code", 0);
+  });
+
+  it("returns 405 for GET on deploy endpoints", async () => {
+    const server = await startDashboardServer({
+      port: 0,
+      host: createHost(),
+    });
+    servers.push(server);
+
+    const previewGet = await sendRequest(server.port, {
+      method: "GET",
+      path: "/api/v1/deploy/preview",
+    });
+    expect(previewGet.statusCode).toBe(405);
+    expect(previewGet.headers.allow).toBe("POST");
+
+    const deployGet = await sendRequest(server.port, {
+      method: "GET",
+      path: "/api/v1/deploy",
+    });
+    expect(deployGet.statusCode).toBe(405);
+    expect(deployGet.headers.allow).toBe("POST");
+  });
+
+  it("returns deploy_failed error when deploy script fails", async () => {
+    const server = await startDashboardServer({
+      port: 0,
+      host: createHost(),
+      execDeploy: async (_args) => {
+        throw new Error("deploy script not found");
+      },
+    });
+    servers.push(server);
+
+    const response = await sendRequest(server.port, {
+      method: "POST",
+      path: "/api/v1/deploy/preview",
+      body: "{}",
+      headers: { "content-type": "application/json" },
+    });
+    expect(response.statusCode).toBe(500);
+    expect(JSON.parse(response.body)).toEqual({
+      error: {
+        code: "deploy_failed",
+        message: "deploy script not found",
+      },
+    });
+  });
+
+  it("deploy stream sends deploy_complete with success=false when script fails", async () => {
+    const server = await startDashboardServer({
+      port: 0,
+      host: createHost(),
+      spawnDeploy: (_args) => {
+        const { spawn: spawnChild } = require("node:child_process");
+        return spawnChild("sh", ["-c", "echo 'oops' && exit 1"]);
+      },
+    });
+    servers.push(server);
+
+    const stream = await openDeployStream(server.port, "/api/v1/deploy");
+    const events = await stream.allEvents();
+    const completeEvents = events.filter((e) => e.event === "deploy_complete");
+    expect(completeEvents).toHaveLength(1);
+    const complete = JSON.parse(completeEvents[0]!.data);
+    expect(complete).toHaveProperty("success", false);
+    expect(complete).toHaveProperty("exit_code", 1);
+  });
+
+  it("includes CORS headers on error responses", async () => {
+    const server = await startDashboardServer({
+      port: 0,
+      host: createHost(),
+    });
+    servers.push(server);
+
+    const notFound = await sendRequest(server.port, {
+      method: "GET",
+      path: "/missing",
+    });
+    expect(notFound.statusCode).toBe(404);
+    expect(notFound.headers["access-control-allow-origin"]).toBe("*");
+
+    const notAllowed = await sendRequest(server.port, {
+      method: "DELETE",
+      path: "/api/v1/state",
+    });
+    expect(notAllowed.statusCode).toBe(405);
+    expect(notAllowed.headers["access-control-allow-origin"]).toBe("*");
   });
 });
 
@@ -337,23 +847,49 @@ function createSnapshot(): RuntimeSnapshot {
     counts: {
       running: 1,
       retrying: 1,
+      completed: 0,
+      failed: 0,
     },
     running: [
       {
         issue_id: "issue-1",
         issue_identifier: "ABC-123",
+        issue_title: "ABC-123",
         state: "In Progress",
+        pipeline_stage: null,
+        activity_summary: "Working on tests",
         session_id: "thread-1-turn-3",
         turn_count: 3,
         last_event: "notification",
         last_message: "Working on tests",
         started_at: "2026-03-06T09:58:00.000Z",
+        first_dispatched_at: "2026-03-06T09:58:00.000Z",
         last_event_at: "2026-03-06T09:59:30.000Z",
+        stage_duration_seconds: 120,
+        tokens_per_turn: 667,
         tokens: {
           input_tokens: 1200,
           output_tokens: 800,
           total_tokens: 2000,
+          cache_read_tokens: 300,
+          cache_write_tokens: 150,
+          reasoning_tokens: 50,
         },
+        total_pipeline_tokens: 2000,
+        pipeline_tokens: {
+          input_tokens: 1000,
+          output_tokens: 500,
+          total_tokens: 2000,
+          cache_read_tokens: 200,
+          cache_write_tokens: 100,
+        },
+        execution_history: [],
+        turn_history: [],
+        recent_activity: [],
+        last_tool_call: null,
+        failure_reason: null,
+        health: "green",
+        health_reason: null,
       },
     ],
     retrying: [
@@ -422,6 +958,7 @@ function createIssueDetail(): IssueDetailResponse {
     ],
     last_error: null,
     tracked: {},
+    parent: null,
   };
 }
 
@@ -535,6 +1072,35 @@ async function openEventStream(
       return await new Promise((resolve) => {
         waitingResolvers.push(resolve);
       });
+    },
+  };
+}
+
+async function openDeployStream(
+  port: number,
+  path: string,
+): Promise<{
+  allEvents(): Promise<Array<{ event: string; data: string }>>;
+}> {
+  return {
+    async allEvents() {
+      const result = await sendRequest(port, {
+        method: "POST",
+        path,
+        body: "{}",
+        headers: { "content-type": "application/json" },
+      });
+      // Parse the SSE body into individual events
+      const events: Array<{ event: string; data: string }> = [];
+      const raw = result.body;
+      const chunks = raw.split("\n\n").filter((c) => c.trim() !== "");
+      for (const chunk of chunks) {
+        const parsed = parseServerSentEvent(chunk);
+        if (parsed !== null) {
+          events.push(parsed);
+        }
+      }
+      return events;
     },
   };
 }

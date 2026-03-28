@@ -45,6 +45,8 @@ export const ERROR_CODES = {
   snapshotTimedOut: "snapshot_timed_out",
   issueNotFound: "issue_not_found",
   cliStartupFailed: "cli_startup_failed",
+  githubCliFailed: "github_cli_failed",
+  deployFailed: "deploy_failed",
 } as const;
 
 export type ErrorCode = (typeof ERROR_CODES)[keyof typeof ERROR_CODES];
