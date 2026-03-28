@@ -195,6 +195,21 @@ export function createDashboardRequestHandler(
       const url = new URL(request.url ?? "/", `http://${hostname}`);
       const method = request.method ?? "GET";
 
+      // CORS headers on all responses
+      response.setHeader("access-control-allow-origin", "*");
+      response.setHeader("access-control-allow-methods", "GET, POST, OPTIONS");
+      response.setHeader(
+        "access-control-allow-headers",
+        "Content-Type, Authorization",
+      );
+
+      // Handle CORS preflight
+      if (method === "OPTIONS") {
+        response.statusCode = 204;
+        response.end();
+        return;
+      }
+
       if (url.pathname === "/") {
         if (method !== "GET") {
           writeMethodNotAllowed(response, ["GET"]);

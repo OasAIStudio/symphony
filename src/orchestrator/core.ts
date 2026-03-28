@@ -42,7 +42,11 @@ export type WorkerExitOutcome =
   | "timed_out"
   | "error";
 
-export type StopReason = "terminal_state" | "inactive_state" | "stall_timeout";
+export type StopReason =
+  | "terminal_state"
+  | "inactive_state"
+  | "stall_timeout"
+  | "manual_stop";
 
 export interface SpawnWorkerResult {
   workerHandle: unknown;

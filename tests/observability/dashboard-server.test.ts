@@ -483,6 +483,71 @@ describe("dashboard server", () => {
     expect(response.headers["content-type"]).toContain("text/plain");
     expect(response.body).toContain("Not found: /missing");
   });
+
+  it("includes CORS headers on GET responses", async () => {
+    const server = await startDashboardServer({
+      port: 0,
+      host: createHost(),
+    });
+    servers.push(server);
+
+    const response = await sendRequest(server.port, {
+      method: "GET",
+      path: "/api/v1/state",
+    });
+    expect(response.statusCode).toBe(200);
+    expect(response.headers["access-control-allow-origin"]).toBe("*");
+    expect(response.headers["access-control-allow-methods"]).toBe(
+      "GET, POST, OPTIONS",
+    );
+    expect(response.headers["access-control-allow-headers"]).toBe(
+      "Content-Type, Authorization",
+    );
+  });
+
+  it("handles OPTIONS preflight with 204 and CORS headers", async () => {
+    const server = await startDashboardServer({
+      port: 0,
+      host: createHost(),
+    });
+    servers.push(server);
+
+    const response = await sendRequest(server.port, {
+      method: "OPTIONS",
+      path: "/api/v1/state",
+    });
+    expect(response.statusCode).toBe(204);
+    expect(response.body).toBe("");
+    expect(response.headers["access-control-allow-origin"]).toBe("*");
+    expect(response.headers["access-control-allow-methods"]).toBe(
+      "GET, POST, OPTIONS",
+    );
+    expect(response.headers["access-control-allow-headers"]).toBe(
+      "Content-Type, Authorization",
+    );
+  });
+
+  it("includes CORS headers on error responses", async () => {
+    const server = await startDashboardServer({
+      port: 0,
+      host: createHost(),
+    });
+    servers.push(server);
+
+    const notFound = await sendRequest(server.port, {
+      method: "GET",
+      path: "/missing",
+    });
+    expect(notFound.statusCode).toBe(404);
+    expect(notFound.headers["access-control-allow-origin"]).toBe("*");
+
+    const notAllowed = await sendRequest(server.port, {
+      method: "DELETE",
+      path: "/api/v1/state",
+    });
+    expect(notAllowed.statusCode).toBe(405);
+    expect(notAllowed.headers["access-control-allow-origin"]).toBe("*");
+  });
 });
 
 function createHost(
