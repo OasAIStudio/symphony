@@ -1,6 +1,8 @@
 /**
  * Section 2: Efficiency Scorecard
  * Converted from design reference EfficiencyScorecard.jsx.
+ *
+ * Note: Failure Rate row removed — now displayed in PipelineHealth component.
  */
 import type { EfficiencyScorecard as EfficiencyScorecardData } from "../types.ts";
 import { Sparkline, fmtNum } from "./chartUtils.tsx";
@@ -10,18 +12,12 @@ function round(n: number, decimals = 0): number {
   return Math.round(n * f) / f;
 }
 
-function mean(arr: number[]): number {
-  if (arr.length === 0) return 0;
-  return arr.reduce((s, v) => s + v, 0) / arr.length;
-}
-
 export interface ScorecardSeries {
   cacheEff?: number[];
   outputRatio?: number[];
   wastedCtx?: number[];
   tokPerTurn?: number[];
   firstPass?: number[];
-  failureRate?: number[];
 }
 
 export interface EfficiencyScorecardProps {
@@ -37,10 +33,6 @@ export default function EfficiencyScorecard({
 }: EfficiencyScorecardProps) {
   const sc = scorecard ?? ({} as Partial<EfficiencyScorecardData>);
   const s = series ?? {};
-
-  const failureRateCurrent = sc.failure_rate?.current ?? {};
-  const rates = Object.values(failureRateCurrent);
-  const avgFailRate = rates.length > 0 ? `${round(mean(rates), 1)}%` : "0%";
 
   const rows = [
     {
@@ -72,12 +64,6 @@ export default function EfficiencyScorecard({
       value: `${round(sc.first_pass_rate?.current ?? 0, 1)}%`,
       sparkline: s.firstPass,
       stroke: "#56d364",
-    },
-    {
-      name: "Failure Rate (all stages)",
-      value: avgFailRate,
-      sparkline: s.failureRate,
-      stroke: "#f85149",
     },
   ];
 

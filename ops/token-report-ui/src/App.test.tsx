@@ -9,6 +9,7 @@ import {
   PerProductBreakdown,
   PerStageTrend,
   PerTicketCostTrend,
+  PipelineHealth,
   ReportFooter,
   ReportHeader,
   StageEfficiency,
@@ -37,7 +38,7 @@ describe("App", () => {
     expect(html).toContain("Symphony Token Report");
   });
 
-  it("renders all 10 section headings", () => {
+  it("renders all section headings", () => {
     const html = renderToString(<App />);
     expect(html).toContain("Executive Summary");
     expect(html).toContain("Efficiency Scorecard");
@@ -45,6 +46,7 @@ describe("App", () => {
     expect(html).toContain("Per-Ticket Cost Trend");
     expect(html).toContain("Outlier Analysis");
     expect(html).toContain("Issue Leaderboard");
+    expect(html).toContain("Pipeline Health");
     expect(html).toContain("Stage Efficiency");
     expect(html).toContain("Per-Product Breakdown");
     expect(html).toContain("SYMPH-131");
@@ -143,7 +145,7 @@ describe("ExecutiveSummary", () => {
 });
 
 describe("EfficiencyScorecard", () => {
-  it("renders all 6 metric rows", () => {
+  it("renders 5 metric rows (failure rate moved to PipelineHealth)", () => {
     const html = renderToString(
       <EfficiencyScorecard scorecard={data.efficiency_scorecard} />,
     );
@@ -153,7 +155,8 @@ describe("EfficiencyScorecard", () => {
     expect(html).toContain("Wasted Context");
     expect(html).toContain("Tokens / Turn");
     expect(html).toContain("First-Pass Rate");
-    expect(html).toContain("Failure Rate (all stages)");
+    // Failure Rate row removed — now in PipelineHealth component
+    expect(html).not.toContain("Failure Rate");
   });
 });
 
@@ -298,6 +301,63 @@ describe("IssueLeaderboard", () => {
   });
 });
 
+describe("PipelineHealth", () => {
+  it("renders per-stage failure rate bars from scorecard data", () => {
+    const html = renderToString(
+      <PipelineHealth failureRate={data.efficiency_scorecard.failure_rate} />,
+    );
+    expect(html).toContain("Pipeline Health");
+    // Stage names derived from failure_rate.current keys
+    expect(html).toContain("investigate");
+    expect(html).toContain("implement");
+    expect(html).toContain("validate");
+    // Bar widths are JS-computed percentages (SSR inserts <!-- --> between text nodes)
+    expect(html).toContain("2<!-- -->% failure rate");
+    expect(html).toContain("8<!-- -->% failure rate");
+    expect(html).toContain("5<!-- -->% failure rate");
+  });
+
+  it("renders summary insight with worst stage", () => {
+    const html = renderToString(
+      <PipelineHealth failureRate={data.efficiency_scorecard.failure_rate} />,
+    );
+    // implement has the highest rate (0.08), should be the worst stage
+    expect(html).toContain("implement accounts for");
+    expect(html).toContain("% of all failures");
+    expect(html).toContain("vs 7d avg");
+  });
+
+  it("renders empty state when no failure data", () => {
+    const html = renderToString(
+      <PipelineHealth
+        failureRate={{ current: {}, trend_7d: {}, trend_30d: {} }}
+      />,
+    );
+    expect(html).toContain("Pipeline Health");
+    expect(html).toContain("No failure rate data available");
+  });
+
+  it("computes bar widths with JS Math.round, not CSS round()", () => {
+    const html = renderToString(
+      <PipelineHealth failureRate={data.efficiency_scorecard.failure_rate} />,
+    );
+    // Ensure no CSS round() function in the output
+    expect(html).not.toContain("round(");
+    // Bar widths should be inline style percentages
+    expect(html).toContain("width:2%");
+    expect(html).toContain("width:8%");
+    expect(html).toContain("width:5%");
+  });
+
+  it("shows direction and delta vs 7d avg", () => {
+    const html = renderToString(
+      <PipelineHealth failureRate={data.efficiency_scorecard.failure_rate} />,
+    );
+    // implement: current 0.08, trend_7d 0.10 → delta = -2pp → "down 2pp"
+    expect(html).toContain("down 2pp vs 7d avg");
+  });
+});
+
 describe("StageEfficiency", () => {
   it("renders stage cards", () => {
     const html = renderToString(
@@ -307,6 +367,18 @@ describe("StageEfficiency", () => {
     expect(html).toContain("investigate");
     expect(html).toContain("implement");
     expect(html).toContain("validate");
+  });
+
+  it("renders failure rate per stage when provided", () => {
+    const html = renderToString(
+      <StageEfficiency
+        perStageSpend={data.per_stage_spend}
+        failureRateCurrent={data.efficiency_scorecard.failure_rate.current}
+      />,
+    );
+    expect(html).toContain("8%<!-- --> failure");
+    expect(html).toContain("2%<!-- --> failure");
+    expect(html).toContain("5%<!-- --> failure");
   });
 });
 

@@ -7,6 +7,7 @@ import {
   PerProductBreakdown,
   PerStageTrend,
   PerTicketCostTrend,
+  PipelineHealth,
   ReportFooter,
   ReportHeader,
   StageEfficiency,
@@ -100,7 +101,11 @@ export default function App() {
         dataSpanDays={data.data_span_days}
       />
       <IssueLeaderboard leaderboard={data.leaderboard ?? []} />
-      <StageEfficiency perStageSpend={data.per_stage_spend} />
+      <PipelineHealth failureRate={sc.failure_rate} />
+      <StageEfficiency
+        perStageSpend={data.per_stage_spend}
+        failureRateCurrent={sc.failure_rate?.current}
+      />
       <PerProductBreakdown perProduct={data.per_product} />
       <ReportFooter />
     </>

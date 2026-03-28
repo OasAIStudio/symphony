@@ -12,6 +12,7 @@ export { default as PerTicketCostTrend } from "./PerTicketCostTrend.tsx";
 export { default as OutlierAnalysis } from "./OutlierAnalysis.tsx";
 export { default as IssueLeaderboard } from "./IssueLeaderboard.tsx";
 export { default as StageEfficiency } from "./StageEfficiency.tsx";
+export { default as PipelineHealth } from "./PipelineHealth.tsx";
 export { default as PerProductBreakdown } from "./PerProductBreakdown.tsx";
 export { default as ReportFooter } from "./ReportFooter.tsx";
 export { default as StageUtilizationChart } from "./StageUtilizationChart.tsx";
