@@ -630,6 +630,175 @@ describe("dashboard server", () => {
     });
   });
 
+  it("returns structured deploy preview JSON with required fields", async () => {
+    const dryRunOutput = [
+      "\x1b[36mPre-deploy version: v1.2.3\x1b[0m",
+      "\x1b[36mPost-deploy version: v1.3.0\x1b[0m",
+      "symphony-ts: abc1234 → def5678",
+      "[dry-run] restart symphony service",
+      "[dry-run] run database migrations",
+    ].join("\n");
+
+    const server = await startDashboardServer({
+      port: 0,
+      host: createHost(),
+      execDeploy: async (_args) => dryRunOutput,
+    });
+    servers.push(server);
+
+    const response = await sendRequest(server.port, {
+      method: "POST",
+      path: "/api/v1/deploy/preview",
+      body: "{}",
+      headers: { "content-type": "application/json" },
+    });
+    expect(response.statusCode).toBe(200);
+    const body = JSON.parse(response.body);
+    expect(body).toHaveProperty("current_version", "v1.2.3");
+    expect(body).toHaveProperty("target_version", "v1.3.0");
+    expect(body).toHaveProperty("commits_ahead", 1);
+    expect(body).toHaveProperty("actions");
+    expect(body.actions).toEqual([
+      "restart symphony service",
+      "run database migrations",
+    ]);
+  });
+
+  it("deploy preview includes running_issues_count from snapshot", async () => {
+    const dryRunOutput = [
+      "Pre-deploy version: v1.0.0",
+      "Post-deploy version: v1.0.1",
+      "symphony-ts: aaa1111 → bbb2222",
+    ].join("\n");
+
+    const server = await startDashboardServer({
+      port: 0,
+      host: createHost(),
+      execDeploy: async (_args) => dryRunOutput,
+    });
+    servers.push(server);
+
+    const response = await sendRequest(server.port, {
+      method: "POST",
+      path: "/api/v1/deploy/preview",
+      body: "{}",
+      headers: { "content-type": "application/json" },
+    });
+    expect(response.statusCode).toBe(200);
+    const body = JSON.parse(response.body);
+    expect(body).toHaveProperty("running_issues_count");
+    // The default snapshot has counts.running = 1
+    expect(body.running_issues_count).toBe(1);
+  });
+
+  it("deploy streams SSE events with deploy_output type", async () => {
+    const server = await startDashboardServer({
+      port: 0,
+      host: createHost(),
+      spawnDeploy: (_args) => {
+        // Create a mock child process using spawn with echo
+        const { spawn: spawnChild } = require("node:child_process");
+        return spawnChild("printf", ["deploying step 1\ndeploying step 2\n"]);
+      },
+    });
+    servers.push(server);
+
+    const stream = await openDeployStream(server.port, "/api/v1/deploy");
+    const events = await stream.allEvents();
+    const outputEvents = events.filter((e) => e.event === "deploy_output");
+    expect(outputEvents.length).toBeGreaterThanOrEqual(2);
+    expect(JSON.parse(outputEvents[0]!.data)).toHaveProperty("line");
+    expect(JSON.parse(outputEvents[0]!.data).line).toBe("deploying step 1");
+    expect(JSON.parse(outputEvents[1]!.data).line).toBe("deploying step 2");
+  });
+
+  it("deploy stream ends with deploy_complete event", async () => {
+    const server = await startDashboardServer({
+      port: 0,
+      host: createHost(),
+      spawnDeploy: (_args) => {
+        const { spawn: spawnChild } = require("node:child_process");
+        return spawnChild("printf", ["done\n"]);
+      },
+    });
+    servers.push(server);
+
+    const stream = await openDeployStream(server.port, "/api/v1/deploy");
+    const events = await stream.allEvents();
+    const completeEvents = events.filter((e) => e.event === "deploy_complete");
+    expect(completeEvents).toHaveLength(1);
+    const complete = JSON.parse(completeEvents[0]!.data);
+    expect(complete).toHaveProperty("success", true);
+    expect(complete).toHaveProperty("exit_code", 0);
+  });
+
+  it("returns 405 for GET on deploy endpoints", async () => {
+    const server = await startDashboardServer({
+      port: 0,
+      host: createHost(),
+    });
+    servers.push(server);
+
+    const previewGet = await sendRequest(server.port, {
+      method: "GET",
+      path: "/api/v1/deploy/preview",
+    });
+    expect(previewGet.statusCode).toBe(405);
+    expect(previewGet.headers.allow).toBe("POST");
+
+    const deployGet = await sendRequest(server.port, {
+      method: "GET",
+      path: "/api/v1/deploy",
+    });
+    expect(deployGet.statusCode).toBe(405);
+    expect(deployGet.headers.allow).toBe("POST");
+  });
+
+  it("returns deploy_failed error when deploy script fails", async () => {
+    const server = await startDashboardServer({
+      port: 0,
+      host: createHost(),
+      execDeploy: async (_args) => {
+        throw new Error("deploy script not found");
+      },
+    });
+    servers.push(server);
+
+    const response = await sendRequest(server.port, {
+      method: "POST",
+      path: "/api/v1/deploy/preview",
+      body: "{}",
+      headers: { "content-type": "application/json" },
+    });
+    expect(response.statusCode).toBe(500);
+    expect(JSON.parse(response.body)).toEqual({
+      error: {
+        code: "deploy_failed",
+        message: "deploy script not found",
+      },
+    });
+  });
+
+  it("deploy stream sends deploy_complete with success=false when script fails", async () => {
+    const server = await startDashboardServer({
+      port: 0,
+      host: createHost(),
+      spawnDeploy: (_args) => {
+        const { spawn: spawnChild } = require("node:child_process");
+        return spawnChild("sh", ["-c", "echo 'oops' && exit 1"]);
+      },
+    });
+    servers.push(server);
+
+    const stream = await openDeployStream(server.port, "/api/v1/deploy");
+    const events = await stream.allEvents();
+    const completeEvents = events.filter((e) => e.event === "deploy_complete");
+    expect(completeEvents).toHaveLength(1);
+    const complete = JSON.parse(completeEvents[0]!.data);
+    expect(complete).toHaveProperty("success", false);
+    expect(complete).toHaveProperty("exit_code", 1);
+  });
+
   it("includes CORS headers on error responses", async () => {
     const server = await startDashboardServer({
       port: 0,
@@ -903,6 +1072,35 @@ async function openEventStream(
       return await new Promise((resolve) => {
         waitingResolvers.push(resolve);
       });
+    },
+  };
+}
+
+async function openDeployStream(
+  port: number,
+  path: string,
+): Promise<{
+  allEvents(): Promise<Array<{ event: string; data: string }>>;
+}> {
+  return {
+    async allEvents() {
+      const result = await sendRequest(port, {
+        method: "POST",
+        path,
+        body: "{}",
+        headers: { "content-type": "application/json" },
+      });
+      // Parse the SSE body into individual events
+      const events: Array<{ event: string; data: string }> = [];
+      const raw = result.body;
+      const chunks = raw.split("\n\n").filter((c) => c.trim() !== "");
+      for (const chunk of chunks) {
+        const parsed = parseServerSentEvent(chunk);
+        if (parsed !== null) {
+          events.push(parsed);
+        }
+      }
+      return events;
     },
   };
 }

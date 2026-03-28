@@ -352,7 +352,9 @@ function createMockDeployProcess(
   lines: string[],
   exitCode = 0,
 ): import("node:child_process").ChildProcess {
-  const { EventEmitter } = require("node:events") as typeof import("node:events");
+  const { EventEmitter } = require("node:events") as typeof import(
+    "node:events",
+  );
   const { Readable } = require("node:stream") as typeof import("node:stream");
 
   class MockProcess extends EventEmitter {

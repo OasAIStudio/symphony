@@ -336,9 +336,7 @@ export function createDashboardRequestHandler(
         } catch (error) {
           writeJsonError(response, 500, ERROR_CODES.deployFailed, {
             message:
-              error instanceof Error
-                ? error.message
-                : "Deploy preview failed.",
+              error instanceof Error ? error.message : "Deploy preview failed.",
           });
         }
         return;
@@ -686,6 +684,7 @@ function parseDeployDryRunOutput(
 
   for (const line of lines) {
     // Strip ANSI escape codes for parsing
+    // biome-ignore lint/suspicious/noControlCharactersInRegex: ANSI escape codes require matching the ESC control character
     const clean = line.replace(/\x1b\[[0-9;]*m/g, "").trim();
 
     // Match "Pre-deploy version: <version>"
