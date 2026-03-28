@@ -43,13 +43,11 @@ export default function App() {
   const uniqueIssues = es.unique_issues.value;
   const cacheHitRate = (sc.cache_efficiency.current ?? 0) * 100;
 
-  // WoW deltas computed from scorecard trends where available
+  // Cache delta: percentage point difference (SYMPH-189)
   const cacheWow =
     sc.cache_efficiency.trend_7d != null
       ? Math.round(
-          ((sc.cache_efficiency.current - sc.cache_efficiency.trend_7d) /
-            (sc.cache_efficiency.trend_7d || 1)) *
-            100,
+          (sc.cache_efficiency.current - sc.cache_efficiency.trend_7d) * 100,
         )
       : null;
 
@@ -70,10 +68,10 @@ export default function App() {
       )}
       <ExecutiveSummary
         totalTokens={totalTokens}
-        tokensDelta={null}
+        tokensDelta={es.total_tokens.wow_delta_pct ?? null}
         tokensPerIssueMedian={tokensPerIssueMedian}
         tokensPerIssueMean={tokensPerIssueMean}
-        tokPerIssueWow={null}
+        tokPerIssueWow={data.per_ticket_trend.wow_delta_pct ?? null}
         uniqueIssues={uniqueIssues}
         cacheHitRate={cacheHitRate}
         cacheWow={cacheWow}

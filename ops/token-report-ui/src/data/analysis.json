@@ -54,7 +54,8 @@
   },
   "executive_summary": {
     "total_tokens": {
-      "value": 18420000
+      "value": 18420000,
+      "wow_delta_pct": 12.3
     },
     "total_stages": {
       "value": 312
@@ -351,7 +352,8 @@
   "per_ticket_trend": {
     "median": 52000,
     "mean": 59000,
-    "ticket_count": 47
+    "ticket_count": 47,
+    "wow_delta_pct": -5.2
   },
   "per_product": {
     "symphony-ts": {

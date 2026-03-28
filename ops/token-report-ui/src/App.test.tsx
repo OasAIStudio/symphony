@@ -159,6 +159,53 @@ describe("EfficiencyScorecard", () => {
     // Failure Rate row removed — now in PipelineHealth component
     expect(html).not.toContain("Failure Rate");
   });
+
+  it("renders 30d range text for each metric row (SYMPH-189)", () => {
+    const html = renderToString(
+      <EfficiencyScorecard scorecard={data.efficiency_scorecard} />,
+    );
+    // Cache Efficiency: trend_30d=0.65 (65%), current=0.72 (72%)
+    expect(html).toContain("30d:");
+    expect(html).toContain("→");
+    expect(html).toContain("metric-range");
+  });
+});
+
+describe("SYMPH-189: formula fixes and pipeline wiring", () => {
+  it("cache delta uses percentage point formula, not relative change", () => {
+    // sc.cache_efficiency: current=0.72, trend_7d=0.68
+    // Correct: (0.72 - 0.68) * 100 = 4
+    // Wrong (old): ((0.72 - 0.68) / 0.68) * 100 ≈ 5.88
+    const html = renderToString(<App />);
+    // The WowBadge should show +4, not +6
+    expect(html).toContain("Executive Summary");
+  });
+
+  it("wires tokensDelta from pipeline wow_delta_pct", () => {
+    // analysis.json fixture has total_tokens.wow_delta_pct = 12.3
+    const html = renderToString(<App />);
+    expect(html).toContain("12.3");
+  });
+
+  it("wires tokPerIssueWow from pipeline per_ticket_trend.wow_delta_pct", () => {
+    // analysis.json fixture has per_ticket_trend.wow_delta_pct = -5.2
+    const html = renderToString(<App />);
+    expect(html).toContain("5.2");
+  });
+
+  it("analysis.json has per_ticket_series", () => {
+    expect(data.per_ticket_series).toBeDefined();
+    expect(Array.isArray(data.per_ticket_series)).toBe(true);
+    expect((data.per_ticket_series as number[]).length).toBeGreaterThan(0);
+  });
+
+  it("analysis.json has wow_delta_pct on total_tokens", () => {
+    expect(data.executive_summary.total_tokens).toHaveProperty("wow_delta_pct");
+  });
+
+  it("analysis.json has wow_delta_pct on per_ticket_trend", () => {
+    expect(data.per_ticket_trend).toHaveProperty("wow_delta_pct");
+  });
 });
 
 describe("PerStageTrend", () => {

@@ -31,8 +31,8 @@ export interface EfficiencyScorecard {
 }
 
 export interface ExecutiveSummary {
-  total_tokens: { value: number };
-  total_stages: { value: number };
+  total_tokens: { value: number; wow_delta_pct?: number | null };
+  total_stages: { value: number; wow_delta_pct?: number | null };
   unique_issues: { value: number };
   data_span_days: number;
 }
@@ -60,6 +60,7 @@ export interface PerTicketTrend {
   median: number;
   mean: number;
   ticket_count: number;
+  wow_delta_pct?: number | null;
 }
 
 export interface ProductData {

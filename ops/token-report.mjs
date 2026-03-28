@@ -1395,6 +1395,52 @@ function computeAnalysis() {
   const perStageStats = computePerStageStats(filteredRecords);
   const perStageTrend = computePerStageTrend(filteredRecords, configRecords);
   const perTicketTrend = computePerTicketTrend(filteredRecords);
+
+  // Per-ticket series: rolling median tokens per ticket by date (ported from renderHtml — SYMPH-189)
+  const perTicketSeries = (() => {
+    const byDate = {};
+    for (const r of filteredRecords) {
+      if (!r.issue_identifier) continue;
+      const dk = dateKey(parseTs(r.timestamp));
+      if (!byDate[dk]) byDate[dk] = {};
+      byDate[dk][r.issue_identifier] =
+        (byDate[dk][r.issue_identifier] ?? 0) + (r.total_total_tokens ?? 0);
+    }
+    const sortedDates = Object.keys(byDate).sort();
+    return sortedDates.map((d) => median(Object.values(byDate[d])));
+  })();
+
+  // Per-ticket WoW delta: median tokens per issue, current vs prior week (ported from renderHtml — SYMPH-189)
+  const perTicketWowDelta = (() => {
+    if (filteredRecords.length === 0) return null;
+    const d7 = daysAgo(7, now);
+    const d14 = daysAgo(14, now);
+    const curr = filterByDateRange(filteredRecords, d7, now);
+    const prev = filterByDateRange(filteredRecords, d14, d7);
+    if (curr.length === 0 || prev.length === 0) return null;
+    const currIssues = {};
+    for (const r of curr) {
+      if (r.issue_identifier)
+        currIssues[r.issue_identifier] =
+          (currIssues[r.issue_identifier] ?? 0) + (r.total_total_tokens ?? 0);
+    }
+    const prevIssues = {};
+    for (const r of prev) {
+      if (r.issue_identifier)
+        prevIssues[r.issue_identifier] =
+          (prevIssues[r.issue_identifier] ?? 0) + (r.total_total_tokens ?? 0);
+    }
+    const currMedian = median(Object.values(currIssues));
+    const prevMedian = median(Object.values(prevIssues));
+    if (prevMedian === 0) return null;
+    return round(((currMedian - prevMedian) / prevMedian) * 100, 1);
+  })();
+
+  // Attach wow_delta_pct to per_ticket_trend (SYMPH-189)
+  if (perTicketWowDelta != null) {
+    perTicketTrend.wow_delta_pct = perTicketWowDelta;
+  }
+
   const perProduct = computePerProduct(filteredRecords);
   const leaderboard = buildLeaderboard(filteredRecords);
 
@@ -1478,6 +1524,7 @@ function computeAnalysis() {
     per_stage_stats: perStageStats,
     per_stage_trend: perStageTrend,
     per_ticket_trend: perTicketTrend,
+    per_ticket_series: perTicketSeries,
     per_product: perProduct,
     daily_series: dailySeries,
     inflections:
