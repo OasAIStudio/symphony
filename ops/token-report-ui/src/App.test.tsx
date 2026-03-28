@@ -221,7 +221,7 @@ describe("EfficiencyScorecard", () => {
     // Cache Efficiency: trend_30d=0.65 (65%), current=0.72 (72%)
     expect(html).toContain("30d:");
     expect(html).toContain("→");
-    expect(html).toContain("metric-range");
+    // SYMPH-197: className removed — range text validated by "30d:" assertion above
   });
 });
 

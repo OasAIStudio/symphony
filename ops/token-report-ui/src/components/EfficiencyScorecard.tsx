@@ -1,6 +1,7 @@
 /**
  * Section 2: Efficiency Scorecard
  * Converted from design reference EfficiencyScorecard.jsx.
+ * Rebuilt from v5 efficiency-scorecard.jsx inline styles (SYMPH-197).
  *
  * Note: Failure Rate row removed — now displayed in PipelineHealth component.
  */
@@ -102,38 +103,90 @@ export default function EfficiencyScorecard({
   ];
 
   return (
-    <section>
-      <h2>Efficiency Scorecard</h2>
+    <section
+      style={{
+        marginBottom: "var(--spacing-section)",
+      }}
+    >
+      <h2
+        style={{
+          fontFamily: "var(--font-heading)",
+          fontSize: "var(--font-size-subheading)",
+          fontWeight: "var(--font-weight-subheading)" as unknown as number,
+          lineHeight: "var(--line-height-heading)",
+          color: "var(--color-text)",
+          margin: 0,
+          marginBottom: "var(--spacing-group)",
+        }}
+      >
+        Efficiency Scorecard
+      </h2>
       {coldStart && (
         <div
-          className="cold-start-scorecard-note"
           style={{
-            color: "var(--text-muted)",
-            fontSize: "0.85rem",
-            marginBottom: "12px",
+            fontFamily: "var(--font-body)",
+            fontSize: "var(--font-size-small)",
+            color: "var(--color-text-secondary)",
+            marginBottom: "var(--spacing-group)",
             fontStyle: "italic",
+            lineHeight: "var(--line-height-body)",
           }}
         >
           Trend data unavailable — requires 7+ days of history
         </div>
       )}
       {rows.map((row) => (
-        <div className="metric-row" key={row.name}>
-          <span className="metric-name">{row.name}</span>
-          <span className="metric-value">{row.value}</span>
+        <div
+          key={row.name}
+          style={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            padding: "var(--spacing-group)",
+            background: "var(--color-surface)",
+            border: "var(--border-width) solid var(--border-color)",
+            borderRadius: "var(--border-radius)",
+            marginBottom: "var(--spacing-element)",
+          }}
+        >
+          <span
+            style={{
+              fontFamily: "var(--font-body)",
+              color: "var(--color-text)",
+              fontWeight: "var(--font-weight-subheading)" as unknown as number,
+              minWidth: 140,
+            }}
+          >
+            {row.name}
+          </span>
+          <span
+            style={{
+              fontFamily: "var(--font-body)",
+              color: "var(--color-text)",
+              fontWeight: "var(--font-weight-heading)" as unknown as number,
+              minWidth: 60,
+              textAlign: "right",
+            }}
+          >
+            {row.value}
+          </span>
           {row.range && (
             <span
-              className="metric-range"
               style={{
-                color: "var(--text-muted)",
-                fontSize: "0.8rem",
-                marginLeft: "8px",
+                fontFamily: "var(--font-body)",
+                fontSize: "var(--font-size-small)",
+                color: "var(--color-text-secondary)",
+                marginLeft: "var(--spacing-element)",
               }}
             >
               {row.range}
             </span>
           )}
-          <span className="metric-sparkline">
+          <span
+            style={{
+              marginLeft: "var(--spacing-group)",
+            }}
+          >
             <Sparkline values={row.sparkline} stroke={row.stroke} fill />
           </span>
         </div>
