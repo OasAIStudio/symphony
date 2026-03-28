@@ -1072,6 +1072,83 @@ describe("token-report.mjs analyze", () => {
       expect(typeof v).toBe("number");
     }
   });
+
+  it("per_stage_stats contains avg_turns and cache_rate per stage", () => {
+    const implementRecords = Array.from({ length: 10 }, (_, i) =>
+      makeTokenRecord({
+        timestamp: new Date(Date.now() - i * 24 * 60 * 60 * 1000).toISOString(),
+        stage_name: "implement",
+        outcome: "completed",
+        issue_identifier: `SYMPH-${400 + i}`,
+        turns_used: 8,
+        total_input_tokens: 1000,
+        total_cache_read_tokens: 500,
+      }),
+    );
+    const planRecords = Array.from({ length: 5 }, (_, i) =>
+      makeTokenRecord({
+        timestamp: new Date(Date.now() - i * 24 * 60 * 60 * 1000).toISOString(),
+        stage_name: "plan",
+        outcome: "completed",
+        issue_identifier: `SYMPH-${410 + i}`,
+        turns_used: 3,
+        total_input_tokens: 600,
+        total_cache_read_tokens: 200,
+      }),
+    );
+    writeTokenHistory(symphonyHome, [...implementRecords, ...planRecords]);
+    writeConfigHistory(symphonyHome, [makeConfigSnapshot()]);
+
+    const result = runAnalyze(symphonyHome);
+
+    expect(result.per_stage_stats).toBeDefined();
+    // Stage names derived from data, not hardcoded
+    expect(Object.keys(result.per_stage_stats)).toContain("implement");
+    expect(Object.keys(result.per_stage_stats)).toContain("plan");
+
+    // implement: avg_turns = 8, cache_rate = 500/(1000+500)*100 = 33.3
+    const impl = result.per_stage_stats.implement;
+    expect(impl.avg_turns).toBeCloseTo(8, 0);
+    expect(impl.cache_rate).toBeCloseTo(33.3, 0);
+    expect(impl.count).toBe(10);
+
+    // plan: avg_turns = 3, cache_rate = 200/(600+200)*100 = 25
+    const plan = result.per_stage_stats.plan;
+    expect(plan.avg_turns).toBeCloseTo(3, 0);
+    expect(plan.cache_rate).toBeCloseTo(25, 0);
+    expect(plan.count).toBe(5);
+  });
+
+  it("per_stage_stats is empty object for cold start with no data", () => {
+    mkdirSync(join(symphonyHome, "data", "linear-cache"), { recursive: true });
+
+    const result = runAnalyze(symphonyHome);
+
+    expect(result.per_stage_stats).toEqual({});
+  });
+
+  it("per_stage_stats handles stages with zero cache reads", () => {
+    const records = Array.from({ length: 5 }, (_, i) =>
+      makeTokenRecord({
+        timestamp: new Date(Date.now() - i * 24 * 60 * 60 * 1000).toISOString(),
+        stage_name: "review",
+        outcome: "completed",
+        issue_identifier: `SYMPH-${500 + i}`,
+        turns_used: 2,
+        total_input_tokens: 800,
+        total_cache_read_tokens: 0,
+      }),
+    );
+    writeTokenHistory(symphonyHome, records);
+    writeConfigHistory(symphonyHome, [makeConfigSnapshot()]);
+
+    const result = runAnalyze(symphonyHome);
+
+    const review = result.per_stage_stats.review;
+    expect(review.avg_turns).toBeCloseTo(2, 0);
+    expect(review.cache_rate).toBe(0);
+    expect(review.count).toBe(5);
+  });
 });
 
 // ---------------------------------------------------------------------------

@@ -1145,6 +1145,47 @@ function buildDailyMetricSeries(records, metricFn) {
 }
 
 /**
+ * Compute per-stage average turns and cache rate (includes ALL stages).
+ * Returns { [stage]: { avg_turns, cache_rate, count } }.
+ *   avg_turns  — mean turns_used across all records for that stage (rounded to 1 decimal)
+ *   cache_rate — cache_read / (input + cache_read) * 100 for that stage (rounded to 1 decimal)
+ *   count      — number of records for that stage
+ */
+function computePerStageStats(records) {
+  const byStage = {};
+  for (const r of records) {
+    const s = r.stage_name ?? "unknown";
+    if (!byStage[s]) {
+      byStage[s] = {
+        total_turns: 0,
+        total_input: 0,
+        total_cache_read: 0,
+        count: 0,
+      };
+    }
+    byStage[s].total_turns += r.turns_used ?? 0;
+    byStage[s].total_input += r.total_input_tokens ?? 0;
+    byStage[s].total_cache_read += r.total_cache_read_tokens ?? 0;
+    byStage[s].count += 1;
+  }
+  const result = {};
+  for (const [stage, data] of Object.entries(byStage)) {
+    const avgTurns = data.count > 0 ? data.total_turns / data.count : 0;
+    const inputPlusCacheRead = data.total_input + data.total_cache_read;
+    const cacheRate =
+      inputPlusCacheRead > 0
+        ? (data.total_cache_read / inputPlusCacheRead) * 100
+        : 0;
+    result[stage] = {
+      avg_turns: round(avgTurns, 1),
+      cache_rate: round(cacheRate, 1),
+      count: data.count,
+    };
+  }
+  return result;
+}
+
+/**
  * Compute per-stage token spend (includes ALL stages, both completed and failed).
  */
 function computePerStageSpend(records) {
@@ -1190,6 +1231,7 @@ function computeAnalysis() {
         data_span_days: 0,
       },
       per_stage_spend: {},
+      per_stage_stats: {},
       per_stage_trend: {},
       per_ticket_trend: { median: 0, mean: 0, ticket_count: 0 },
       per_product: {},
@@ -1216,6 +1258,7 @@ function computeAnalysis() {
   const scorecard = computeScorecardWithTrends(records, now);
   const executiveSummary = buildExecutiveSummary(records, spanDays, now);
   const perStageSpend = computePerStageSpend(records);
+  const perStageStats = computePerStageStats(records);
   const perStageTrend = computePerStageTrend(records, configRecords);
   const perTicketTrend = computePerTicketTrend(records);
   const perProduct = computePerProduct(records);
@@ -1275,6 +1318,7 @@ function computeAnalysis() {
     efficiency_scorecard: scorecard,
     executive_summary: executiveSummary,
     per_stage_spend: perStageSpend,
+    per_stage_stats: perStageStats,
     per_stage_trend: perStageTrend,
     per_ticket_trend: perTicketTrend,
     per_product: perProduct,
