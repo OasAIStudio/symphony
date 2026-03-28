@@ -230,6 +230,7 @@ export default function TicketCostChart({
     <svg
       width={width}
       height={height}
+      viewBox={`0 0 ${width} ${height}`}
       xmlns="http://www.w3.org/2000/svg"
       style={{ background: CHART_TOKENS.bg, borderRadius: "6px" }}
       aria-label="Per-ticket cost trend chart"

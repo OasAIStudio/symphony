@@ -2,6 +2,8 @@
  * Shared SVG chart utilities for the Token Report v2.
  * Converted from chartUtils.jsx design reference.
  */
+import { useId } from "react";
+import { DEFAULT_PADDING } from "../lib/chart-utils.ts";
 import type { StageTrend } from "../types.ts";
 
 function round(n: number, decimals = 0): number {
@@ -47,6 +49,8 @@ export interface SparklineProps {
   height?: number;
   stroke?: string;
   strokeWidth?: number;
+  /** When true, render a gradient fill under the sparkline (stroke color at 20% opacity → 0%). */
+  fill?: boolean;
 }
 
 export function Sparkline({
@@ -55,7 +59,9 @@ export function Sparkline({
   height = 30,
   stroke = "#58a6ff",
   strokeWidth = 1.5,
+  fill = false,
 }: SparklineProps) {
+  const gradientId = useId();
   if (!values || values.length < 2) {
     return (
       <svg
@@ -70,13 +76,23 @@ export function Sparkline({
   const minY = Math.min(...values);
   const maxY = Math.max(...values);
   const rangeY = maxY - minY || 1;
-  const points = values
-    .map((v, i) => {
-      const x = (i / (values.length - 1)) * width;
-      const y = height - ((v - minY) / rangeY) * (height - 4) - 2;
-      return `${round(x, 1)},${round(y, 1)}`;
-    })
-    .join(" ");
+
+  const coords = values.map((v, i) => {
+    const x = (i / (values.length - 1)) * width;
+    const y = height - ((v - minY) / rangeY) * (height - 4) - 2;
+    return [round(x, 1), round(y, 1)] as const;
+  });
+
+  const points = coords.map(([x, y]) => `${x},${y}`).join(" ");
+
+  // Build polygon points for gradient fill area (line path + baseline return)
+  const fillPoints = fill
+    ? [
+        ...coords.map(([x, y]) => `${x},${y}`),
+        `${coords[coords.length - 1][0]},${height}`,
+        `${coords[0][0]},${height}`,
+      ].join(" ")
+    : undefined;
 
   return (
     <svg
@@ -86,6 +102,15 @@ export function Sparkline({
       aria-label="Sparkline chart"
       role="img"
     >
+      {fill && (
+        <defs>
+          <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor={stroke} stopOpacity={0.2} />
+            <stop offset="100%" stopColor={stroke} stopOpacity={0} />
+          </linearGradient>
+        </defs>
+      )}
+      {fill && <polygon points={fillPoints} fill={`url(#${gradientId})`} />}
       <polyline
         points={points}
         fill="none"
@@ -171,10 +196,10 @@ export function MultiLineChart({
   const minY = Math.min(...allVals, 0);
   const maxY = Math.max(...allVals, 1);
   const rangeY = maxY - minY || 1;
-  const padL = 50;
-  const padR = 10;
-  const padT = 10;
-  const padB = 25;
+  const padL = DEFAULT_PADDING.left;
+  const padR = DEFAULT_PADDING.right;
+  const padT = DEFAULT_PADDING.top;
+  const padB = DEFAULT_PADDING.bottom;
   const chartW = width - padL - padR;
   const chartH = height - padT - padB;
 
@@ -289,6 +314,7 @@ export function MultiLineChart({
     <svg
       width={width}
       height={height}
+      viewBox={`0 0 ${width} ${height}`}
       xmlns="http://www.w3.org/2000/svg"
       style={{ background: "#0d1117", borderRadius: "6px" }}
       aria-label="Per-stage token trend chart"
