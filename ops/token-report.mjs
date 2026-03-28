@@ -935,12 +935,27 @@ function detectInflections(records, configRecords, now) {
         ),
       ];
 
+      // Build per-ticket token breakdown (SYMPH-187)
+      const ticketTotals = new Map();
+      for (const r of windowRecords) {
+        if (!r.issue_identifier) continue;
+        ticketTotals.set(
+          r.issue_identifier,
+          (ticketTotals.get(r.issue_identifier) ?? 0) +
+            (r.total_total_tokens ?? 0),
+        );
+      }
+      const windowTicketData = [...ticketTotals.entries()].map(
+        ([issue, tokens]) => ({ issue, tokens: round(tokens, 0) }),
+      );
+
       attributions.push({
         type: "ticket_mix",
         description: `coincides with ${windowIssues.length} tickets in window averaging ${round(windowAvgTokens, 0)} tokens vs baseline ${round(baselineAvgTokens, 0)}`,
         window_issues: windowIssues,
         window_avg_tokens: round(windowAvgTokens, 0),
         baseline_avg_tokens: round(baselineAvgTokens, 0),
+        window_ticket_data: windowTicketData,
       });
     }
 
@@ -1272,7 +1287,7 @@ function computePerStageSpend(records) {
 function generateInflectionInsight(inflection) {
   if (process.env.TOKEN_REPORT_LLM !== "1") return null;
   try {
-    const prompt = [
+    const promptParts = [
       "You are a DevOps analyst. Analyze this token usage inflection and provide a 1-2 sentence insight.",
       `Stage: ${inflection.metric}`,
       `Direction: ${inflection.direction}`,
@@ -1283,10 +1298,32 @@ function generateInflectionInsight(inflection) {
       inflection.pipeline_classification?.length > 0
         ? `Pipeline classification: ${JSON.stringify(inflection.pipeline_classification)}`
         : "",
-      "Respond with only the insight, no preamble.",
-    ]
-      .filter(Boolean)
-      .join("\n");
+    ];
+
+    // Enrich prompt with per-ticket data and config change details (SYMPH-187)
+    if (inflection.attributions && inflection.attributions.length > 0) {
+      for (const attr of inflection.attributions) {
+        if (
+          attr.type === "ticket_mix" &&
+          attr.window_ticket_data &&
+          attr.window_ticket_data.length > 0
+        ) {
+          const ticketLines = attr.window_ticket_data
+            .map((t) => `  ${t.issue}: ${t.tokens} tokens`)
+            .join("\n");
+          promptParts.push(`Per-ticket token breakdown:\n${ticketLines}`);
+        }
+        if (attr.type === "config_change") {
+          promptParts.push(
+            `Config change on ${attr.date}: ${attr.changed_files.join(", ")}`,
+          );
+        }
+      }
+    }
+
+    promptParts.push("Respond with only the insight, no preamble.");
+
+    const prompt = promptParts.filter(Boolean).join("\n");
     const result = execFileSync("claude", ["-p", prompt], {
       encoding: "utf-8",
       timeout: 30_000,
@@ -2308,8 +2345,10 @@ function runSlack() {
 
   // --- Section 8: Inflections (SYMPH-186: includes pipeline classification) ---
   if (inflections.length > 0) {
-    const inflectionLines = inflections.slice(0, 5).map((inf) => {
-      let line = `>  • ⚡ ${inf.metric}: ${inf.direction} *${round(inf.magnitude * 100, 1)}%* (7d avg crossed 30d avg)`;
+    const inflectionLines = inflections.slice(0, 5).flatMap((inf) => {
+      const lines = [
+        `>  • ⚡ ${inf.metric}: ${inf.direction} *${round(inf.magnitude * 100, 1)}%* (7d avg crossed 30d avg)`,
+      ];
       if (inf.pipeline_classification?.length > 0) {
         const tickets = inf.pipeline_classification
           .map(
@@ -2317,12 +2356,12 @@ function runSlack() {
               `${t.identifier}${t.task_count != null ? ` (${t.task_count} tasks)` : ""}`,
           )
           .join(", ");
-        line += `\n>    Tickets: ${tickets}`;
+        lines.push(`>    Tickets: ${tickets}`);
       }
       if (inf.llm_insight) {
-        line += `\n>    💡 ${inf.llm_insight}`;
+        lines.push(`>    💡 ${inf.llm_insight}`);
       }
-      return line;
+      return lines;
     });
     sections.push(`*Trend Inflections*\n${inflectionLines.join("\n")}`);
   } else {

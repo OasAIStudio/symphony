@@ -892,6 +892,105 @@ describe("token-report.mjs analyze", () => {
     }
   });
 
+  it("inflection ticket_mix attribution includes window_ticket_data (SYMPH-187)", () => {
+    const records: Record<string, unknown>[] = [];
+    const now = new Date();
+
+    // Days 8-34: normal (3000 tokens)
+    for (let d = 8; d < 35; d++) {
+      const date = new Date(now);
+      date.setDate(date.getDate() - d);
+      records.push(
+        makeTokenRecord({
+          timestamp: date.toISOString(),
+          stage_name: "implement",
+          total_total_tokens: 3000,
+          issue_identifier: `SYMPH-B${d}`,
+        }),
+      );
+    }
+
+    // Days 0-7: spike (6000 tokens) with distinct tickets
+    for (let d = 0; d < 7; d++) {
+      const date = new Date(now);
+      date.setDate(date.getDate() - d);
+      records.push(
+        makeTokenRecord({
+          timestamp: date.toISOString(),
+          stage_name: "implement",
+          total_total_tokens: 6000,
+          issue_identifier: `SYMPH-T${d}`,
+        }),
+      );
+    }
+
+    writeTokenHistory(symphonyHome, records);
+    writeConfigHistory(symphonyHome, [makeConfigSnapshot()]);
+
+    const result = runAnalyze(symphonyHome);
+
+    expect(result.inflections.length).toBeGreaterThanOrEqual(1);
+    const inf = result.inflections[0];
+    expect(inf.attributions).toBeDefined();
+
+    const ticketMix = inf.attributions.find(
+      (a: Record<string, unknown>) => a.type === "ticket_mix",
+    );
+    if (ticketMix) {
+      expect(ticketMix.window_ticket_data).toBeDefined();
+      expect(Array.isArray(ticketMix.window_ticket_data)).toBe(true);
+      if (ticketMix.window_ticket_data.length > 0) {
+        const entry = ticketMix.window_ticket_data[0];
+        expect(entry).toHaveProperty("issue");
+        expect(entry).toHaveProperty("tokens");
+        expect(typeof entry.issue).toBe("string");
+        expect(typeof entry.tokens).toBe("number");
+      }
+    }
+  });
+
+  it("llm_insight is null when TOKEN_REPORT_LLM is not set (SYMPH-187)", () => {
+    const records: Record<string, unknown>[] = [];
+    const now = new Date();
+
+    for (let d = 8; d < 35; d++) {
+      const date = new Date(now);
+      date.setDate(date.getDate() - d);
+      records.push(
+        makeTokenRecord({
+          timestamp: date.toISOString(),
+          stage_name: "implement",
+          total_total_tokens: 3000,
+          issue_identifier: `SYMPH-L${d}`,
+        }),
+      );
+    }
+
+    for (let d = 0; d < 7; d++) {
+      const date = new Date(now);
+      date.setDate(date.getDate() - d);
+      records.push(
+        makeTokenRecord({
+          timestamp: date.toISOString(),
+          stage_name: "implement",
+          total_total_tokens: 6000,
+          issue_identifier: `SYMPH-LH${d}`,
+        }),
+      );
+    }
+
+    writeTokenHistory(symphonyHome, records);
+    writeConfigHistory(symphonyHome, [makeConfigSnapshot()]);
+
+    // Ensure TOKEN_REPORT_LLM is not set
+    const result = runAnalyze(symphonyHome, { TOKEN_REPORT_LLM: "" });
+
+    expect(result.inflections.length).toBeGreaterThanOrEqual(1);
+    for (const inf of result.inflections) {
+      expect(inf.llm_insight).toBeNull();
+    }
+  });
+
   it("excludes spec-gen stage from per_stage_spend aggregation", () => {
     const records: Record<string, unknown>[] = [];
     const now = new Date();
