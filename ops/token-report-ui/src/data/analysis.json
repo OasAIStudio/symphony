@@ -1,0 +1,631 @@
+{
+  "cold_start_tier": ">=30d",
+  "analyzed_at": "2026-03-20T08:00:00.000Z",
+  "data_span_days": 45,
+  "record_count": 312,
+  "efficiency_scorecard": {
+    "cache_efficiency": {
+      "current": 0.72,
+      "trend_7d": 0.68,
+      "trend_30d": 0.65,
+      "series": [0.63, 0.66, 0.68, 0.7, 0.72]
+    },
+    "output_ratio": {
+      "current": 0.34,
+      "trend_7d": 0.31,
+      "trend_30d": 0.29,
+      "series": [0.34, 0.35, 0.36, 0.36, 0.37]
+    },
+    "wasted_context": {
+      "current": 0.08,
+      "trend_7d": 0.1,
+      "trend_30d": 0.12,
+      "series": [0.22, 0.21, 0.2, 0.19, 0.18]
+    },
+    "tokens_per_turn": {
+      "current": 4820,
+      "trend_7d": 5100,
+      "trend_30d": 5400,
+      "series": [4800, 5100, 5300, 5200, 5000]
+    },
+    "first_pass_rate": {
+      "current": 78.5,
+      "trend_7d": 75.2,
+      "trend_30d": 72.0,
+      "series": [74.0, 76.5, 78.0, 80.5, 82.0]
+    },
+    "failure_rate": {
+      "current": {
+        "investigate": 0.02,
+        "implement": 0.08,
+        "validate": 0.05
+      },
+      "trend_7d": {
+        "investigate": 0.03,
+        "implement": 0.1,
+        "validate": 0.06
+      },
+      "trend_30d": {
+        "investigate": 0.04,
+        "implement": 0.12,
+        "validate": 0.07
+      }
+    }
+  },
+  "executive_summary": {
+    "total_tokens": {
+      "value": 18420000
+    },
+    "total_stages": {
+      "value": 312
+    },
+    "unique_issues": {
+      "value": 47
+    },
+    "data_span_days": 45
+  },
+  "per_stage_spend": {
+    "investigate": {
+      "total_tokens": 3200000,
+      "count": 85,
+      "completed": 82,
+      "failed": 3
+    },
+    "implement": {
+      "total_tokens": 9800000,
+      "count": 120,
+      "completed": 108,
+      "failed": 12
+    },
+    "validate": {
+      "total_tokens": 2100000,
+      "count": 62,
+      "completed": 58,
+      "failed": 4
+    },
+    "spec-gen": {
+      "total_tokens": 1500000,
+      "count": 25,
+      "completed": 25,
+      "failed": 0
+    },
+    "review": {
+      "total_tokens": 1820000,
+      "count": 20,
+      "completed": 19,
+      "failed": 1
+    }
+  },
+  "per_stage_trend": {
+    "investigate": {
+      "daily_avg": {
+        "2026-02-04": 73452,
+        "2026-02-05": 71675,
+        "2026-02-06": 82914,
+        "2026-02-07": 76763,
+        "2026-02-08": 78310,
+        "2026-02-09": 76499,
+        "2026-02-10": 71712,
+        "2026-02-11": 61207,
+        "2026-02-12": 58284,
+        "2026-02-13": 63326,
+        "2026-02-14": 65063,
+        "2026-02-15": 85249,
+        "2026-02-16": 77096,
+        "2026-02-17": 75986,
+        "2026-02-18": 67182,
+        "2026-02-19": 64180,
+        "2026-02-20": 59863,
+        "2026-02-21": 82473,
+        "2026-02-22": 81062,
+        "2026-02-23": 80775,
+        "2026-02-24": 69723,
+        "2026-02-25": 64887,
+        "2026-02-26": 80827,
+        "2026-02-27": 58183,
+        "2026-02-28": 78680,
+        "2026-03-01": 84286,
+        "2026-03-02": 79787,
+        "2026-03-03": 60161,
+        "2026-03-04": 66475,
+        "2026-03-05": 75365,
+        "2026-03-06": 58481,
+        "2026-03-07": 64542,
+        "2026-03-08": 71252,
+        "2026-03-09": 78745,
+        "2026-03-10": 64608,
+        "2026-03-11": 71584,
+        "2026-03-12": 56967,
+        "2026-03-13": 73309,
+        "2026-03-14": 72680,
+        "2026-03-15": 75419,
+        "2026-03-16": 76857,
+        "2026-03-17": 81169,
+        "2026-03-18": 80008,
+        "2026-03-19": 63431,
+        "2026-03-20": 80666
+      },
+      "wow_delta": -0.05
+    },
+    "implement": {
+      "daily_avg": {
+        "2026-02-04": 211499,
+        "2026-02-05": 254173,
+        "2026-02-06": 186372,
+        "2026-02-07": 247958,
+        "2026-02-08": 199477,
+        "2026-02-09": 175755,
+        "2026-02-10": 216795,
+        "2026-02-11": 176459,
+        "2026-02-12": 187646,
+        "2026-02-13": 255853,
+        "2026-02-14": 195209,
+        "2026-02-15": 202575,
+        "2026-02-16": 227732,
+        "2026-02-17": 238087,
+        "2026-02-18": 225154,
+        "2026-02-19": 244513,
+        "2026-02-20": 227177,
+        "2026-02-21": 228232,
+        "2026-02-22": 181959,
+        "2026-02-23": 197692,
+        "2026-02-24": 181176,
+        "2026-02-25": 252629,
+        "2026-02-26": 259247,
+        "2026-02-27": 195055,
+        "2026-02-28": 245145,
+        "2026-03-01": 193523,
+        "2026-03-02": 210987,
+        "2026-03-03": 180477,
+        "2026-03-04": 176483,
+        "2026-03-05": 187023,
+        "2026-03-06": 205206,
+        "2026-03-07": 221507,
+        "2026-03-08": 260832,
+        "2026-03-09": 211143,
+        "2026-03-10": 207300,
+        "2026-03-11": 205141,
+        "2026-03-12": 229074,
+        "2026-03-13": 210430,
+        "2026-03-14": 176187,
+        "2026-03-15": 240173,
+        "2026-03-16": 211869,
+        "2026-03-17": 246493,
+        "2026-03-18": 189113,
+        "2026-03-19": 233641,
+        "2026-03-20": 220378
+      },
+      "wow_delta": 0.03
+    },
+    "validate": {
+      "daily_avg": {
+        "2026-02-04": 51594,
+        "2026-02-05": 49069,
+        "2026-02-06": 46411,
+        "2026-02-07": 45128,
+        "2026-02-08": 41710,
+        "2026-02-09": 37545,
+        "2026-02-10": 43481,
+        "2026-02-11": 47419,
+        "2026-02-12": 42734,
+        "2026-02-13": 55776,
+        "2026-02-14": 52714,
+        "2026-02-15": 48455,
+        "2026-02-16": 39173,
+        "2026-02-17": 55130,
+        "2026-02-18": 48252,
+        "2026-02-19": 48447,
+        "2026-02-20": 39660,
+        "2026-02-21": 39125,
+        "2026-02-22": 52852,
+        "2026-02-23": 49831,
+        "2026-02-24": 46016,
+        "2026-02-25": 51900,
+        "2026-02-26": 49346,
+        "2026-02-27": 53517,
+        "2026-02-28": 43624,
+        "2026-03-01": 39724,
+        "2026-03-02": 45866,
+        "2026-03-03": 38597,
+        "2026-03-04": 54216,
+        "2026-03-05": 43729,
+        "2026-03-06": 50551,
+        "2026-03-07": 46816,
+        "2026-03-08": 38599,
+        "2026-03-09": 39029,
+        "2026-03-10": 47385,
+        "2026-03-11": 45700,
+        "2026-03-12": 55078,
+        "2026-03-13": 37885,
+        "2026-03-14": 55042,
+        "2026-03-15": 54797,
+        "2026-03-16": 48715,
+        "2026-03-17": 48928,
+        "2026-03-18": 47108,
+        "2026-03-19": 45933,
+        "2026-03-20": 46969
+      },
+      "wow_delta": -0.02
+    },
+    "spec-gen": {
+      "daily_avg": {
+        "2026-02-04": 29756,
+        "2026-02-05": 29592,
+        "2026-02-06": 27912,
+        "2026-02-07": 31090,
+        "2026-02-08": 39876,
+        "2026-02-09": 35125,
+        "2026-02-10": 29749,
+        "2026-02-11": 36027,
+        "2026-02-12": 30510,
+        "2026-02-13": 36097,
+        "2026-02-14": 38468,
+        "2026-02-15": 30096,
+        "2026-02-16": 27522,
+        "2026-02-17": 33949,
+        "2026-02-18": 36900,
+        "2026-02-19": 35221,
+        "2026-02-20": 29885,
+        "2026-02-21": 36851,
+        "2026-02-22": 39191,
+        "2026-02-23": 28934,
+        "2026-02-24": 27091,
+        "2026-02-25": 29909,
+        "2026-02-26": 29073,
+        "2026-02-27": 32684,
+        "2026-02-28": 29883,
+        "2026-03-01": 36927,
+        "2026-03-02": 30158,
+        "2026-03-03": 27416,
+        "2026-03-04": 29332,
+        "2026-03-05": 31228,
+        "2026-03-06": 27258,
+        "2026-03-07": 37574,
+        "2026-03-08": 26791,
+        "2026-03-09": 38319,
+        "2026-03-10": 27623,
+        "2026-03-11": 36026,
+        "2026-03-12": 29248,
+        "2026-03-13": 37050,
+        "2026-03-14": 30909,
+        "2026-03-15": 31721,
+        "2026-03-16": 33996,
+        "2026-03-17": 32356,
+        "2026-03-18": 35902,
+        "2026-03-19": 36281,
+        "2026-03-20": 35614
+      },
+      "wow_delta": 0
+    },
+    "review": {
+      "daily_avg": {
+        "2026-02-04": 38996,
+        "2026-02-05": 37404,
+        "2026-02-06": 42138,
+        "2026-02-07": 45164,
+        "2026-02-08": 47155,
+        "2026-02-09": 38702,
+        "2026-02-10": 33233,
+        "2026-02-11": 33534,
+        "2026-02-12": 46761,
+        "2026-02-13": 41367,
+        "2026-02-14": 41619,
+        "2026-02-15": 46869,
+        "2026-02-16": 45679,
+        "2026-02-17": 45857,
+        "2026-02-18": 46375,
+        "2026-02-19": 33163,
+        "2026-02-20": 38732,
+        "2026-02-21": 38831,
+        "2026-02-22": 32948,
+        "2026-02-23": 40006,
+        "2026-02-24": 43328,
+        "2026-02-25": 42286,
+        "2026-02-26": 45995,
+        "2026-02-27": 43271,
+        "2026-02-28": 43104,
+        "2026-03-01": 32743,
+        "2026-03-02": 45627,
+        "2026-03-03": 41498,
+        "2026-03-04": 37326,
+        "2026-03-05": 34988,
+        "2026-03-06": 35071,
+        "2026-03-07": 32651,
+        "2026-03-08": 35360,
+        "2026-03-09": 43769,
+        "2026-03-10": 33588,
+        "2026-03-11": 34996,
+        "2026-03-12": 43465,
+        "2026-03-13": 34462,
+        "2026-03-14": 35178,
+        "2026-03-15": 32416,
+        "2026-03-16": 34712,
+        "2026-03-17": 46008,
+        "2026-03-18": 44446,
+        "2026-03-19": 38008,
+        "2026-03-20": 38510
+      },
+      "wow_delta": -0.01
+    }
+  },
+  "per_ticket_trend": {
+    "median": 52000,
+    "mean": 59000,
+    "ticket_count": 47
+  },
+  "per_product": {
+    "symphony-ts": {
+      "total_tokens": 12500000,
+      "total_stages": 210,
+      "unique_issues": 30
+    },
+    "jony-agent": {
+      "total_tokens": 4200000,
+      "total_stages": 72,
+      "unique_issues": 12
+    },
+    "stickerlabs": {
+      "total_tokens": 1720000,
+      "total_stages": 30,
+      "unique_issues": 5
+    }
+  },
+  "daily_series": {
+    "cacheEff": [
+      58.2, 60.1, 61.5, 59.8, 63.0, 62.4, 64.1, 63.8, 65.2, 64.9, 66.3, 65.7,
+      67.0, 66.5, 68.2, 67.8, 69.1, 68.5, 70.0, 69.4, 70.8, 70.2, 71.5, 71.0,
+      72.3, 71.8, 72.0
+    ],
+    "outputRatio": [
+      25.1, 26.0, 27.2, 26.5, 28.0, 27.4, 29.1, 28.6, 30.2, 29.8, 31.0, 30.5,
+      31.8, 31.2, 32.5, 32.0, 33.1, 32.6, 33.8, 33.2, 34.0, 33.5, 34.2, 33.8,
+      34.5, 34.0, 34.0
+    ],
+    "wastedCtx": [
+      15.0, 14.2, 13.8, 14.5, 13.0, 13.5, 12.2, 12.8, 11.5, 12.0, 10.8, 11.2,
+      10.0, 10.5, 9.5, 10.0, 9.0, 9.5, 8.8, 9.2, 8.5, 8.8, 8.2, 8.5, 8.0, 8.2,
+      8.0
+    ],
+    "tokPerTurn": [
+      6200, 6100, 5950, 6050, 5800, 5900, 5700, 5800, 5600, 5700, 5500, 5600,
+      5400, 5500, 5300, 5400, 5200, 5300, 5150, 5200, 5100, 5150, 5050, 5100,
+      5000, 4950, 4820
+    ],
+    "firstPass": [
+      68.0, 69.5, 70.2, 69.0, 71.5, 70.8, 72.0, 71.2, 73.5, 72.8, 74.0, 73.2,
+      75.0, 74.5, 76.0, 75.2, 76.8, 76.0, 77.2, 76.5, 77.8, 77.0, 78.0, 77.5,
+      78.5, 78.0, 78.5
+    ],
+    "failureRate": [
+      12.0, 11.5, 10.8, 11.2, 10.0, 10.5, 9.5, 10.0, 9.0, 9.5, 8.5, 9.0, 8.0,
+      8.5, 7.5, 8.0, 7.0, 7.5, 6.8, 7.2, 6.5, 7.0, 6.2, 6.5, 6.0, 5.5, 5.0
+    ]
+  },
+  "inflections": [
+    {
+      "date": "2026-03-05",
+      "metric": "tokens_per_turn",
+      "direction": "down",
+      "magnitude": 0.15,
+      "context": "Switched to prompt caching strategy",
+      "avg_7d": 1200,
+      "avg_30d": 1412,
+      "attributions": [
+        {
+          "type": "ticket_mix",
+          "description": "Switched to prompt caching strategy"
+        }
+      ],
+      "llm_insight": null
+    },
+    {
+      "date": "2026-03-12",
+      "metric": "cache_efficiency",
+      "direction": "up",
+      "magnitude": 0.08,
+      "context": "Enabled extended cache TTL",
+      "avg_7d": 78,
+      "avg_30d": 72,
+      "attributions": [
+        {
+          "type": "config_change",
+          "description": "Enabled extended cache TTL"
+        }
+      ],
+      "llm_insight": null
+    }
+  ],
+  "outliers": [
+    {
+      "issue_identifier": "SYMPH-98",
+      "issue_title": "Large refactor with multiple file changes",
+      "total_tokens": 450000,
+      "z_score": 3.2,
+      "multiplier": 8.5,
+      "linear_url": "https://linear.app/mobilyze-llc/issue/SYMPH-98",
+      "threshold": 200000,
+      "mean": 53000,
+      "stddev": 74000,
+      "parent": null,
+      "hypothesis": "Linear parent spec unavailable — unable to determine complexity attribution"
+    },
+    {
+      "issue_identifier": "JONY-42",
+      "issue_title": "Deep codebase exploration across 3 repos",
+      "total_tokens": 180000,
+      "z_score": 2.8,
+      "multiplier": 3.4,
+      "linear_url": "https://linear.app/mobilyze-llc/issue/JONY-42",
+      "threshold": 200000,
+      "mean": 53000,
+      "stddev": 74000,
+      "parent": null,
+      "hypothesis": "Linear parent spec unavailable — unable to determine complexity attribution"
+    }
+  ],
+  "leaderboard": [
+    {
+      "identifier": "SYMPH-98",
+      "title": "Large refactor with multiple file changes",
+      "tokens": 450000,
+      "linear_url": "https://linear.app/mobilyze-llc/issue/SYMPH-98"
+    },
+    {
+      "identifier": "JONY-42",
+      "title": "Deep codebase exploration across 3 repos",
+      "tokens": 180000,
+      "linear_url": "https://linear.app/mobilyze-llc/issue/JONY-42"
+    },
+    {
+      "identifier": "SYMPH-112",
+      "title": "Foundation setup",
+      "tokens": 95000,
+      "linear_url": "https://linear.app/mobilyze-llc/issue/SYMPH-112"
+    },
+    {
+      "identifier": "SYMPH-113",
+      "title": "Auth middleware overhaul",
+      "tokens": 92000,
+      "linear_url": "https://linear.app/mobilyze-llc/issue/SYMPH-113"
+    },
+    {
+      "identifier": "SYMPH-114",
+      "title": "Database migration batch runner",
+      "tokens": 88000,
+      "linear_url": "https://linear.app/mobilyze-llc/issue/SYMPH-114"
+    },
+    {
+      "identifier": "JONY-55",
+      "title": "Memory management refactor",
+      "tokens": 85000,
+      "linear_url": "https://linear.app/mobilyze-llc/issue/JONY-55"
+    },
+    {
+      "identifier": "SYMPH-115",
+      "title": "Pipeline retry logic",
+      "tokens": 82000,
+      "linear_url": "https://linear.app/mobilyze-llc/issue/SYMPH-115"
+    },
+    {
+      "identifier": "SYMPH-116",
+      "title": "Webhook handler consolidation",
+      "tokens": 79000,
+      "linear_url": "https://linear.app/mobilyze-llc/issue/SYMPH-116"
+    },
+    {
+      "identifier": "JONY-58",
+      "title": "Context window optimization",
+      "tokens": 76000,
+      "linear_url": "https://linear.app/mobilyze-llc/issue/JONY-58"
+    },
+    {
+      "identifier": "SYMPH-117",
+      "title": "Token counting accuracy fix",
+      "tokens": 73000,
+      "linear_url": "https://linear.app/mobilyze-llc/issue/SYMPH-117"
+    },
+    {
+      "identifier": "SYMPH-118",
+      "title": "Rate limiter implementation",
+      "tokens": 70000,
+      "linear_url": "https://linear.app/mobilyze-llc/issue/SYMPH-118"
+    },
+    {
+      "identifier": "JONY-60",
+      "title": "Prompt template versioning",
+      "tokens": 67000,
+      "linear_url": "https://linear.app/mobilyze-llc/issue/JONY-60"
+    },
+    {
+      "identifier": "SYMPH-119",
+      "title": "Error reporting dashboard",
+      "tokens": 64000,
+      "linear_url": "https://linear.app/mobilyze-llc/issue/SYMPH-119"
+    },
+    {
+      "identifier": "SYMPH-120",
+      "title": "Config hot-reload support",
+      "tokens": 61000,
+      "linear_url": "https://linear.app/mobilyze-llc/issue/SYMPH-120"
+    },
+    {
+      "identifier": "JONY-63",
+      "title": "Tool execution sandbox",
+      "tokens": 58000,
+      "linear_url": "https://linear.app/mobilyze-llc/issue/JONY-63"
+    },
+    {
+      "identifier": "SYMPH-121",
+      "title": "Metrics collection pipeline",
+      "tokens": 55000,
+      "linear_url": "https://linear.app/mobilyze-llc/issue/SYMPH-121"
+    },
+    {
+      "identifier": "SYMPH-122",
+      "title": "Session persistence layer",
+      "tokens": 52000,
+      "linear_url": "https://linear.app/mobilyze-llc/issue/SYMPH-122"
+    },
+    {
+      "identifier": "JONY-65",
+      "title": "Code review automation",
+      "tokens": 49000,
+      "linear_url": "https://linear.app/mobilyze-llc/issue/JONY-65"
+    },
+    {
+      "identifier": "SYMPH-123",
+      "title": "Notification dispatch service",
+      "tokens": 46000,
+      "linear_url": "https://linear.app/mobilyze-llc/issue/SYMPH-123"
+    },
+    {
+      "identifier": "SYMPH-124",
+      "title": "Cache invalidation strategy",
+      "tokens": 43000,
+      "linear_url": "https://linear.app/mobilyze-llc/issue/SYMPH-124"
+    },
+    {
+      "identifier": "JONY-67",
+      "title": "Test harness improvements",
+      "tokens": 40000,
+      "linear_url": "https://linear.app/mobilyze-llc/issue/JONY-67"
+    },
+    {
+      "identifier": "SYMPH-125",
+      "title": "Deployment rollback mechanism",
+      "tokens": 37000,
+      "linear_url": "https://linear.app/mobilyze-llc/issue/SYMPH-125"
+    },
+    {
+      "identifier": "SYMPH-126",
+      "title": "Log aggregation service",
+      "tokens": 34000,
+      "linear_url": "https://linear.app/mobilyze-llc/issue/SYMPH-126"
+    },
+    {
+      "identifier": "JONY-69",
+      "title": "API versioning middleware",
+      "tokens": 31000,
+      "linear_url": "https://linear.app/mobilyze-llc/issue/JONY-69"
+    },
+    {
+      "identifier": "SYMPH-127",
+      "title": "Feature flag integration",
+      "tokens": 28000,
+      "linear_url": "https://linear.app/mobilyze-llc/issue/SYMPH-127"
+    },
+    {
+      "identifier": "SYMPH-128",
+      "title": "Health check endpoint",
+      "tokens": 25000,
+      "linear_url": "https://linear.app/mobilyze-llc/issue/SYMPH-128"
+    },
+    {
+      "identifier": "SYMPH-129",
+      "title": "Queue worker scaling",
+      "tokens": 22000,
+      "linear_url": "https://linear.app/mobilyze-llc/issue/SYMPH-129"
+    }
+  ],
+  "per_ticket_series": [45000, 50000, 54000, 51000, 52000]
+}

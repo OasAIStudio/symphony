@@ -85,12 +85,21 @@ export interface RefreshResponse {
   operations: string[];
 }
 
+export interface StopIssueResponse {
+  issue_identifier: string;
+  stopped: boolean;
+  reason: string;
+}
+
 export interface DashboardServerHost {
   getRuntimeSnapshot(): RuntimeSnapshot | Promise<RuntimeSnapshot>;
   getIssueDetails(
     issueIdentifier: string,
   ): IssueDetailResponse | null | Promise<IssueDetailResponse | null>;
   requestRefresh(): RefreshResponse | Promise<RefreshResponse>;
+  requestIssueStop?(
+    issueIdentifier: string,
+  ): StopIssueResponse | Promise<StopIssueResponse>;
   subscribeToSnapshots?(listener: () => void): () => void;
 }
 
@@ -111,7 +120,7 @@ export interface DashboardServerInstance {
 }
 
 export function createDashboardServer(options: DashboardServerOptions): Server {
-  const hostname = options.hostname ?? "127.0.0.1";
+  const hostname = options.hostname ?? "0.0.0.0";
   const snapshotTimeoutMs =
     options.snapshotTimeoutMs ?? DEFAULT_SNAPSHOT_TIMEOUT_MS;
   const liveController = new DashboardLiveUpdatesController({
@@ -144,7 +153,7 @@ export async function startDashboardServer(
   },
 ): Promise<DashboardServerInstance> {
   const server = createDashboardServer(options);
-  const hostname = options.hostname ?? "127.0.0.1";
+  const hostname = options.hostname ?? "0.0.0.0";
 
   await new Promise<void>((resolve, reject) => {
     server.once("error", reject);
@@ -183,7 +192,7 @@ export function createDashboardRequestHandler(
     liveController?: DashboardLiveUpdatesController;
   },
 ): (request: IncomingMessage, response: ServerResponse) => Promise<void> {
-  const hostname = options.hostname ?? "127.0.0.1";
+  const hostname = options.hostname ?? "0.0.0.0";
   const snapshotTimeoutMs =
     options.snapshotTimeoutMs ?? DEFAULT_SNAPSHOT_TIMEOUT_MS;
   const renderOptions: DashboardRenderOptions = {
@@ -194,6 +203,21 @@ export function createDashboardRequestHandler(
     try {
       const url = new URL(request.url ?? "/", `http://${hostname}`);
       const method = request.method ?? "GET";
+
+      // CORS headers on all responses
+      response.setHeader("access-control-allow-origin", "*");
+      response.setHeader("access-control-allow-methods", "GET, POST, OPTIONS");
+      response.setHeader(
+        "access-control-allow-headers",
+        "Content-Type, Authorization",
+      );
+
+      // Handle CORS preflight
+      if (method === "OPTIONS") {
+        response.statusCode = 204;
+        response.end();
+        return;
+      }
 
       if (url.pathname === "/") {
         if (method !== "GET") {
@@ -252,14 +276,36 @@ export function createDashboardRequestHandler(
       }
 
       if (url.pathname.startsWith("/api/v1/")) {
+        const rest = url.pathname.slice("/api/v1/".length);
+        const stopMatch = rest.match(/^(.+)\/stop$/);
+
+        if (stopMatch !== null) {
+          if (method !== "POST") {
+            writeMethodNotAllowed(response, ["POST"]);
+            return;
+          }
+
+          const issueIdentifier = decodeURIComponent(stopMatch[1] ?? "");
+
+          if (options.host.requestIssueStop === undefined) {
+            writeJsonError(response, 501, "not_implemented", {
+              message: "Stop issue is not supported by this host.",
+            });
+            return;
+          }
+
+          await readRequestBody(request);
+          const result = await options.host.requestIssueStop(issueIdentifier);
+          writeJson(response, result.stopped ? 200 : 404, result);
+          return;
+        }
+
         if (method !== "GET") {
           writeMethodNotAllowed(response, ["GET"]);
           return;
         }
 
-        const issueIdentifier = decodeURIComponent(
-          url.pathname.slice("/api/v1/".length),
-        );
+        const issueIdentifier = decodeURIComponent(rest);
         const issue = await options.host.getIssueDetails(issueIdentifier);
         if (issue === null) {
           writeJsonError(response, 404, ERROR_CODES.issueNotFound, {
